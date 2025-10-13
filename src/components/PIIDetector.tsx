@@ -1,0 +1,318 @@
+import { useState, useRef, useEffect } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { useToast } from '@/hooks/use-toast';
+import { BrowserPIIDetector, PIIEntity } from '@/lib/pii-detector';
+import { Download, Upload, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
+
+export function PIIDetector() {
+  const [inputText, setInputText] = useState('');
+  const [detectedEntities, setDetectedEntities] = useState<PIIEntity[]>([]);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
+  const [initProgress, setInitProgress] = useState(0);
+  const [redactedText, setRedactedText] = useState('');
+  const [selectedEntities, setSelectedEntities] = useState<Set<number>>(new Set());
+  const detectorRef = useRef<BrowserPIIDetector | null>(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    detectorRef.current = new BrowserPIIDetector();
+  }, []);
+
+  const handleInitialize = async () => {
+    if (!detectorRef.current) return;
+    
+    setIsInitializing(true);
+    try {
+      await detectorRef.current.initialize((progress) => {
+        setInitProgress(Math.round(progress * 100));
+      });
+      toast({
+        title: 'AI Model Ready',
+        description: 'PII detection model loaded successfully',
+        duration: 3000,
+      });
+    } catch (error) {
+      toast({
+        title: 'Initialization Failed',
+        description: 'Failed to load AI model. Please refresh and try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  const handleDetect = async () => {
+    if (!inputText.trim()) {
+      toast({
+        title: 'No Text',
+        description: 'Please enter text to analyze',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsDetecting(true);
+    try {
+      if (!detectorRef.current) {
+        throw new Error('Detector not initialized');
+      }
+
+      const entities = await detectorRef.current.detectAll(inputText);
+      setDetectedEntities(entities);
+      setSelectedEntities(new Set(entities.map((_, i) => i)));
+      
+      toast({
+        title: 'Detection Complete',
+        description: `Found ${entities.length} potential PII items`,
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error('Detection error:', error);
+      toast({
+        title: 'Detection Failed',
+        description: 'Failed to detect PII. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDetecting(false);
+    }
+  };
+
+  const toggleEntity = (index: number) => {
+    const newSelected = new Set(selectedEntities);
+    if (newSelected.has(index)) {
+      newSelected.delete(index);
+    } else {
+      newSelected.add(index);
+    }
+    setSelectedEntities(newSelected);
+  };
+
+  const handleRedact = () => {
+    let result = inputText;
+    const entitiesToRedact = detectedEntities
+      .filter((_, i) => selectedEntities.has(i))
+      .sort((a, b) => b.start - a.start); // Reverse order to maintain indices
+
+    entitiesToRedact.forEach((entity, index) => {
+      const placeholder = `[REDACTED_${entity.label.toUpperCase().replace(/\s/g, '_')}_${String(index + 1).padStart(3, '0')}]`;
+      result = result.substring(0, entity.start) + placeholder + result.substring(entity.end);
+    });
+
+    setRedactedText(result);
+    toast({
+      title: 'Redaction Complete',
+      description: `Redacted ${entitiesToRedact.length} items`,
+      duration: 3000,
+    });
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(redactedText);
+    toast({
+      title: 'Copied',
+      description: 'Redacted text copied to clipboard',
+      duration: 2000,
+    });
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      setInputText(text);
+    };
+    reader.readAsText(file);
+  };
+
+  const getLabelColor = (label: string) => {
+    const colors: { [key: string]: string } = {
+      'Person Name': 'bg-red-500',
+      'Email': 'bg-orange-500',
+      'Phone Number': 'bg-yellow-500',
+      'ABN': 'bg-green-500',
+      'TFN': 'bg-blue-500',
+      'Medicare Number': 'bg-indigo-500',
+      'Credit Card': 'bg-purple-500',
+      'Bank Account': 'bg-pink-500',
+      'Location': 'bg-cyan-500',
+      'Organization': 'bg-teal-500',
+    };
+    return colors[label] || 'bg-gray-500';
+  };
+
+  return (
+    <div className="container mx-auto p-6 max-w-7xl space-y-6">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-6 w-6 text-primary" />
+            <CardTitle>AI-Powered PII Detector</CardTitle>
+          </div>
+          <CardDescription>
+            100% local processing - no data leaves your browser. Compliant with Australian financial regulations.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!isInitializing && initProgress === 0 && (
+            <div className="flex items-center gap-4 p-4 border rounded-lg bg-muted/50">
+              <AlertCircle className="h-5 w-5 text-muted-foreground" />
+              <div className="flex-1">
+                <p className="text-sm font-medium">AI Model Not Loaded</p>
+                <p className="text-xs text-muted-foreground">Initialize the AI model to start detecting PII (one-time download ~50MB)</p>
+              </div>
+              <Button onClick={handleInitialize}>
+                Initialize AI Model
+              </Button>
+            </div>
+          )}
+
+          {isInitializing && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Downloading AI model... {initProgress}%</p>
+              <Progress value={initProgress} />
+            </div>
+          )}
+
+          {initProgress > 0 && !isInitializing && (
+            <div className="flex items-center gap-2 p-3 border rounded-lg bg-green-50 dark:bg-green-950">
+              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+              <p className="text-sm font-medium text-green-600 dark:text-green-400">AI Model Ready</p>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Input Text</label>
+              <label htmlFor="file-upload">
+                <Button variant="outline" size="sm" asChild>
+                  <span className="cursor-pointer flex items-center gap-2">
+                    <Upload className="h-4 w-4" />
+                    Upload File
+                  </span>
+                </Button>
+                <input
+                  id="file-upload"
+                  type="file"
+                  accept=".txt"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+              </label>
+            </div>
+            <Textarea
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder="Paste or type text containing potential PII..."
+              className="min-h-[200px] font-mono text-sm"
+            />
+          </div>
+
+          <Button 
+            onClick={handleDetect} 
+            disabled={!inputText.trim() || isDetecting || initProgress === 0}
+            className="w-full"
+          >
+            {isDetecting ? 'Detecting PII...' : 'Detect PII'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {detectedEntities.length > 0 && (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Detected PII ({detectedEntities.length} items)</CardTitle>
+              <CardDescription>
+                Review and select items to redact. AI-detected items are marked with confidence scores.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                {detectedEntities.map((entity, index) => (
+                  <div
+                    key={index}
+                    onClick={() => toggleEntity(index)}
+                    className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-colors ${
+                      selectedEntities.has(index) 
+                        ? 'bg-primary/10 border-primary' 
+                        : 'hover:bg-muted/50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedEntities.has(index)}
+                        onChange={() => toggleEntity(index)}
+                        className="h-4 w-4"
+                      />
+                      <Badge className={getLabelColor(entity.label)}>
+                        {entity.label}
+                      </Badge>
+                      <code className="text-sm bg-muted px-2 py-1 rounded">
+                        {entity.text}
+                      </code>
+                    </div>
+                    {entity.score < 1 && (
+                      <span className="text-xs text-muted-foreground">
+                        {Math.round(entity.score * 100)}% confidence
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex gap-2">
+                <Button onClick={handleRedact} className="flex-1">
+                  Redact Selected ({selectedEntities.size})
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setSelectedEntities(new Set(detectedEntities.map((_, i) => i)))}
+                >
+                  Select All
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setSelectedEntities(new Set())}
+                >
+                  Clear All
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {redactedText && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Redacted Text</CardTitle>
+                <CardDescription>
+                  PII has been replaced with labeled placeholders
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Textarea
+                  value={redactedText}
+                  readOnly
+                  className="min-h-[200px] font-mono text-sm"
+                />
+                <Button onClick={handleCopy} className="w-full" variant="outline">
+                  <Download className="h-4 w-4 mr-2" />
+                  Copy to Clipboard
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
