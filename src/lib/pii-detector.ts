@@ -193,21 +193,34 @@ export class BrowserPIIDetector {
   }
 
   async detectAll(text: string): Promise<PIIEntity[]> {
-    // Run regex patterns first (fast)
+    // Run regex patterns first (fast and more accurate for structured data)
     const regexEntities = this.detectAustralianPII(text);
     
-    // Filter out AI-detected entities that overlap with addresses
-    // This prevents the AI from breaking up addresses we've already captured
-    const addressRanges = regexEntities
-      .filter(e => e.label === 'Address')
-      .map(e => ({ start: e.start, end: e.end }));
+    // Create exclusion zones for regex-detected entities
+    // AI should not detect anything within these ranges
+    const exclusionZones = regexEntities.map(e => ({ 
+      start: e.start, 
+      end: e.end,
+      label: e.label 
+    }));
     
+    // Run AI detection
     const aiEntities = await this.detectPII(text);
+    
+    // Filter out AI entities that overlap with our structured patterns
     const filteredAIEntities = aiEntities.filter(entity => {
-      // Skip if this entity is within an address range
-      return !addressRanges.some(addr => 
-        entity.start >= addr.start && entity.end <= addr.end
-      );
+      // Skip if this entity overlaps with ANY exclusion zone
+      const overlaps = exclusionZones.some(zone => {
+        // Check if entity overlaps with zone
+        return !(entity.end <= zone.start || entity.start >= zone.end);
+      });
+      
+      // Also filter out generic AI location/org detections that are likely
+      // part of addresses or company names we already caught
+      const isGenericLocation = entity.label === 'Location' && entity.text.length < 15;
+      const isGenericOrg = entity.label === 'Organization' && entity.text.length < 20;
+      
+      return !overlaps && !isGenericLocation && !isGenericOrg;
     });
 
     // Merge without duplicates
