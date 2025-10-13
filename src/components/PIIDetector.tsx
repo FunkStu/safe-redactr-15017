@@ -29,7 +29,7 @@ export function PIIDetector() {
     setIsInitializing(true);
     try {
       await detectorRef.current.initialize((progress) => {
-        setInitProgress(Math.round(progress * 100));
+        setInitProgress(Math.round(progress));
       });
       toast({
         title: 'AI Model Ready',

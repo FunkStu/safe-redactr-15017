@@ -29,7 +29,9 @@ export class BrowserPIIDetector {
           device: 'webgpu',
           progress_callback: (progress: any) => {
             if (onProgress && progress.progress !== undefined) {
-              onProgress(progress.progress);
+              // Progress is already 0-100, just ensure it's capped
+              const normalizedProgress = Math.min(100, Math.max(0, progress.progress));
+              onProgress(normalizedProgress);
             }
           }
         }
@@ -42,7 +44,8 @@ export class BrowserPIIDetector {
         {
           progress_callback: (progress: any) => {
             if (onProgress && progress.progress !== undefined) {
-              onProgress(progress.progress);
+              const normalizedProgress = Math.min(100, Math.max(0, progress.progress));
+              onProgress(normalizedProgress);
             }
           }
         }
