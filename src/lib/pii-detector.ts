@@ -86,108 +86,98 @@ export class BrowserPIIDetector {
     return mapping[label.toUpperCase()] || label;
   }
 
-  // Comprehensive patterns for Australian financial PII
+  // Smart patterns for Australian financial PII - conservative approach
   detectAustralianPII(text: string): PIIEntity[] {
+    const entities: PIIEntity[] = [];
+    
+    // 1. ACTUAL PERSON NAMES - only after specific labels
+    const namePattern = /(?:Client Name|Name|Adviser Name|Representative Name|Signed by|Prepared for):\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/gi;
+    let match;
+    while ((match = namePattern.exec(text)) !== null) {
+      const name = match[1];
+      const start = match.index + match[0].indexOf(name);
+      entities.push({
+        text: name,
+        label: 'Person Name',
+        start,
+        end: start + name.length,
+        score: 1.0
+      });
+    }
+    
+    // 2. COMPLETE ADDRESSES - capture full address in one entity
+    const addressPattern = /\b(\d{1,5}\s+[A-Za-z]+(?:\s+[A-Za-z]+)*\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Court|Ct|Place|Pl|Way|Crescent|Cres|Parade|Pde|Boulevard|Blvd|Terrace|Tce),?\s*[A-Za-z\s]+,?\s*(?:NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\s+\d{4})\b/gi;
+    while ((match = addressPattern.exec(text)) !== null) {
+      entities.push({
+        text: match[1],
+        label: 'Address',
+        start: match.index,
+        end: match.index + match[1].length,
+        score: 1.0
+      });
+    }
+    
+    // 3. GOVERNMENT IDs
     const patterns = [
-      // Personal Names - catch ALL occurrences (2+ capitalized words)
-      {
-        pattern: /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/g,
-        label: 'Person Name'
-      },
-      // Dates of Birth and general dates
-      {
-        pattern: /(?:Date of Birth|DOB|Born):\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
-        label: 'Date of Birth',
-        group: 1
-      },
-      {
-        pattern: /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})\b/g,
-        label: 'Date'
-      },
-      // Australian addresses
-      {
-        pattern: /\b(\d{1,5}\s+[A-Za-z]+(?:\s+[A-Za-z]+)*\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Court|Ct|Place|Pl|Way|Crescent|Cres|Parade|Pde|Boulevard|Blvd|Terrace|Tce),?\s*[A-Za-z\s]+,?\s*(?:NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\s+\d{4})\b/gi,
-        label: 'Address'
-      },
-      // Australian Business Number
       {
         pattern: /\b(?:ABN:?\s*)?(\d{2}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{3})\b/g,
-        label: 'ABN',
-        group: 1
+        label: 'ABN'
       },
-      // Tax File Number
       {
         pattern: /\b(?:TFN:?\s*)?(\d{3}[\s-]?\d{3}[\s-]?\d{3})\b/g,
-        label: 'TFN',
-        group: 1
+        label: 'TFN'
       },
-      // Medicare Number
       {
         pattern: /\b(?:Medicare:?\s*)?(\d{4}[\s-]?\d{5}[\s-]?\d{1})\b/g,
-        label: 'Medicare Number',
-        group: 1
-      },
-      // Email addresses - catch ALL occurrences
+        label: 'Medicare Number'
+      }
+    ];
+    
+    // 4. CONTACT INFORMATION
+    const contactPatterns = [
       {
         pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
         label: 'Email'
       },
-      // Australian phone numbers
       {
         pattern: /\b(?:\+61[\s-]?)?0[2-9](?:[\s-]?\d){8}\b/g,
         label: 'Phone Number'
-      },
-      // Credit card numbers
+      }
+    ];
+    
+    // 5. FINANCIAL ACCOUNT NUMBERS (actual PII)
+    const accountPatterns = [
       {
         pattern: /\b(?:\d{4}[\s-]?){3}\d{4}\b/g,
         label: 'Credit Card'
       },
-      // Bank account (BSB + Account)
       {
         pattern: /\b(\d{3}[\s-]\d{3}[\s-]\d{4,10})\b/g,
         label: 'Bank Account'
-      },
-      // Currency amounts (for financial sensitivity)
-      {
-        pattern: /\$[\d,]+(?:\.\d{2})?/g,
-        label: 'Currency Amount'
-      },
-      // Employer/Company names with Pty Ltd
-      {
-        pattern: /\b([A-Z][A-Za-z\s&]+(?:Pty Ltd|Ltd|Pty|Limited|Inc|Corporation))\b/gi,
-        label: 'Company Name'
-      },
-      // Super fund names
-      {
-        pattern: /\b(HostPlus|AustralianSuper|REST|Sunsuper|HESTA|Cbus|UniSuper|QSuper|First State Super|AMP)\b/gi,
-        label: 'Super Fund'
-      },
-      // Bank/Financial institution names
-      {
-        pattern: /\b(ANZ|NAB|Westpac|Commonwealth Bank|CBA|Macquarie|ING|Bendigo Bank|St\.?\s*George|Bank of Melbourne|BankWest|Suncorp)\b/gi,
-        label: 'Bank Name'
-      },
-      // Income amounts
-      {
-        pattern: /(?:Income|Salary|Wage):\s*\$[\d,]+/gi,
-        label: 'Income Amount'
-      },
-      // Age (when near personal info)
-      {
-        pattern: /\b(?:Age|Aged):\s*(\d{1,3})\b/gi,
-        label: 'Age',
-        group: 1
       }
     ];
-
-    const entities: PIIEntity[] = [];
-    patterns.forEach(({ pattern, label, group }) => {
+    
+    // 6. DATES OF BIRTH (actual PII)
+    const dobPattern = /(?:Date of Birth|DOB|Born):\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi;
+    while ((match = dobPattern.exec(text)) !== null) {
+      const dob = match[1];
+      const start = match.index + match[0].indexOf(dob);
+      entities.push({
+        text: dob,
+        label: 'Date of Birth',
+        start,
+        end: start + dob.length,
+        score: 1.0
+      });
+    }
+    
+    // Execute all patterns
+    [...patterns, ...contactPatterns, ...accountPatterns].forEach(({ pattern, label }) => {
       let match;
-      // Create fresh regex for each pattern to ensure global flag works correctly
       const regex = new RegExp(pattern.source, pattern.flags);
       while ((match = regex.exec(text)) !== null) {
-        const matchText = group !== undefined ? match[group] : match[0];
-        const matchStart = group !== undefined ? match.index + match[0].indexOf(match[group]) : match.index;
+        const matchText = match[1] || match[0];
+        const matchStart = match[1] ? match.index + match[0].indexOf(match[1]) : match.index;
         
         entities.push({
           text: matchText,
@@ -203,15 +193,26 @@ export class BrowserPIIDetector {
   }
 
   async detectAll(text: string): Promise<PIIEntity[]> {
-    const [aiEntities, regexEntities] = await Promise.all([
-      this.detectPII(text),
-      Promise.resolve(this.detectAustralianPII(text))
-    ]);
-
-    // Merge without deduplication - we want ALL occurrences
-    const allEntities = [...aiEntities, ...regexEntities];
+    // Run regex patterns first (fast)
+    const regexEntities = this.detectAustralianPII(text);
     
-    // Only remove exact duplicates at the same position
+    // Filter out AI-detected entities that overlap with addresses
+    // This prevents the AI from breaking up addresses we've already captured
+    const addressRanges = regexEntities
+      .filter(e => e.label === 'Address')
+      .map(e => ({ start: e.start, end: e.end }));
+    
+    const aiEntities = await this.detectPII(text);
+    const filteredAIEntities = aiEntities.filter(entity => {
+      // Skip if this entity is within an address range
+      return !addressRanges.some(addr => 
+        entity.start >= addr.start && entity.end <= addr.end
+      );
+    });
+
+    // Merge without duplicates
+    const allEntities = [...filteredAIEntities, ...regexEntities];
+    
     const uniqueEntities = allEntities.filter((entity, index, self) => 
       index === self.findIndex(e => 
         e.start === entity.start && 
