@@ -89,11 +89,10 @@ export class BrowserPIIDetector {
   // Comprehensive patterns for Australian financial PII
   detectAustralianPII(text: string): PIIEntity[] {
     const patterns = [
-      // Personal Names (common patterns in documents)
+      // Personal Names - catch ALL occurrences (2+ capitalized words)
       {
-        pattern: /(?:Client Name|Name|Adviser|Representative):\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/gi,
-        label: 'Person Name',
-        group: 1
+        pattern: /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/g,
+        label: 'Person Name'
       },
       // Dates of Birth and general dates
       {
@@ -103,8 +102,7 @@ export class BrowserPIIDetector {
       },
       {
         pattern: /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})\b/g,
-        label: 'Date',
-        group: 1
+        label: 'Date'
       },
       // Australian addresses
       {
@@ -129,7 +127,7 @@ export class BrowserPIIDetector {
         label: 'Medicare Number',
         group: 1
       },
-      // Email addresses
+      // Email addresses - catch ALL occurrences
       {
         pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
         label: 'Email'
@@ -154,17 +152,15 @@ export class BrowserPIIDetector {
         pattern: /\$[\d,]+(?:\.\d{2})?/g,
         label: 'Currency Amount'
       },
-      // Employer/Company names
+      // Employer/Company names with Pty Ltd
       {
-        pattern: /(?:Employer|Company):\s*([A-Z][A-Za-z\s&]+(?:Pty Ltd|Ltd|Pty|Limited|Inc|Corporation))/gi,
-        label: 'Company Name',
-        group: 1
+        pattern: /\b([A-Z][A-Za-z\s&]+(?:Pty Ltd|Ltd|Pty|Limited|Inc|Corporation))\b/gi,
+        label: 'Company Name'
       },
-      // Super fund names and account details
+      // Super fund names
       {
-        pattern: /(?:Superannuation|Super|Fund):\s*([A-Z][A-Za-z\s]+)/gi,
-        label: 'Super Fund',
-        group: 1
+        pattern: /\b(HostPlus|AustralianSuper|REST|Sunsuper|HESTA|Cbus|UniSuper|QSuper|First State Super|AMP)\b/gi,
+        label: 'Super Fund'
       },
       // Bank/Financial institution names
       {
@@ -187,6 +183,7 @@ export class BrowserPIIDetector {
     const entities: PIIEntity[] = [];
     patterns.forEach(({ pattern, label, group }) => {
       let match;
+      // Create fresh regex for each pattern to ensure global flag works correctly
       const regex = new RegExp(pattern.source, pattern.flags);
       while ((match = regex.exec(text)) !== null) {
         const matchText = group !== undefined ? match[group] : match[0];
@@ -211,11 +208,15 @@ export class BrowserPIIDetector {
       Promise.resolve(this.detectAustralianPII(text))
     ]);
 
-    // Merge and deduplicate
+    // Merge without deduplication - we want ALL occurrences
     const allEntities = [...aiEntities, ...regexEntities];
+    
+    // Only remove exact duplicates at the same position
     const uniqueEntities = allEntities.filter((entity, index, self) => 
       index === self.findIndex(e => 
-        e.start === entity.start && e.end === entity.end
+        e.start === entity.start && 
+        e.end === entity.end && 
+        e.label === entity.label
       )
     );
 
