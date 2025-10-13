@@ -140,6 +140,72 @@ export function PIIDetector() {
     });
   };
 
+  const handleExportMapping = () => {
+    if (redactionMap.size === 0) {
+      toast({
+        title: 'No Mapping',
+        description: 'No redaction mapping available to export',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const mappingData = {
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      mapping: Object.fromEntries(redactionMap),
+    };
+
+    const blob = new Blob([JSON.stringify(mappingData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `redaction-mapping-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: 'Mapping Exported',
+      description: 'Redaction mapping saved securely',
+      duration: 3000,
+    });
+  };
+
+  const handleImportMapping = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        
+        if (!data.mapping) {
+          throw new Error('Invalid mapping file format');
+        }
+
+        const newMap = new Map<string, string>(Object.entries(data.mapping));
+        setRedactionMap(newMap);
+        
+        toast({
+          title: 'Mapping Imported',
+          description: `Loaded ${newMap.size} redaction mappings`,
+          duration: 3000,
+        });
+      } catch (error) {
+        toast({
+          title: 'Import Failed',
+          description: 'Invalid mapping file format',
+          variant: 'destructive',
+        });
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -322,16 +388,37 @@ export function PIIDetector() {
                   readOnly
                   className="min-h-[200px] font-mono text-sm"
                 />
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <Button onClick={handleCopy} className="flex-1" variant="outline">
                     <Download className="h-4 w-4 mr-2" />
-                    Copy to Clipboard
+                    Copy Text
                   </Button>
                   {redactionMap.size > 0 && (
-                    <Button onClick={handleUnredact} className="flex-1" variant="outline">
-                      Unredact
-                    </Button>
+                    <>
+                      <Button onClick={handleExportMapping} className="flex-1" variant="outline">
+                        <Download className="h-4 w-4 mr-2" />
+                        Export Mapping
+                      </Button>
+                      <Button onClick={handleUnredact} className="flex-1" variant="outline">
+                        Unredact
+                      </Button>
+                    </>
                   )}
+                  <label htmlFor="mapping-upload" className="flex-1">
+                    <Button variant="outline" className="w-full" asChild>
+                      <span className="cursor-pointer flex items-center justify-center gap-2">
+                        <Upload className="h-4 w-4" />
+                        Import Mapping
+                      </span>
+                    </Button>
+                    <input
+                      id="mapping-upload"
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={handleImportMapping}
+                    />
+                  </label>
                 </div>
               </CardContent>
             </Card>
