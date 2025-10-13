@@ -16,6 +16,7 @@ export function PIIDetector() {
   const [initProgress, setInitProgress] = useState(0);
   const [redactedText, setRedactedText] = useState('');
   const [selectedEntities, setSelectedEntities] = useState<Set<number>>(new Set());
+  const [redactionMap, setRedactionMap] = useState<Map<string, string>>(new Map());
   const detectorRef = useRef<BrowserPIIDetector | null>(null);
   const { toast } = useToast();
 
@@ -100,15 +101,32 @@ export function PIIDetector() {
       .filter((_, i) => selectedEntities.has(i))
       .sort((a, b) => b.start - a.start); // Reverse order to maintain indices
 
+    const newRedactionMap = new Map<string, string>();
     entitiesToRedact.forEach((entity, index) => {
       const placeholder = `[REDACTED_${entity.label.toUpperCase().replace(/\s/g, '_')}_${String(index + 1).padStart(3, '0')}]`;
+      newRedactionMap.set(placeholder, entity.text);
       result = result.substring(0, entity.start) + placeholder + result.substring(entity.end);
     });
 
+    setRedactionMap(newRedactionMap);
     setRedactedText(result);
     toast({
       title: 'Redaction Complete',
       description: `Redacted ${entitiesToRedact.length} items`,
+      duration: 3000,
+    });
+  };
+
+  const handleUnredact = () => {
+    let result = redactedText;
+    redactionMap.forEach((originalText, placeholder) => {
+      result = result.split(placeholder).join(originalText);
+    });
+    
+    setRedactedText(result);
+    toast({
+      title: 'Unredaction Complete',
+      description: `Restored ${redactionMap.size} items`,
       duration: 3000,
     });
   };
@@ -304,10 +322,17 @@ export function PIIDetector() {
                   readOnly
                   className="min-h-[200px] font-mono text-sm"
                 />
-                <Button onClick={handleCopy} className="w-full" variant="outline">
-                  <Download className="h-4 w-4 mr-2" />
-                  Copy to Clipboard
-                </Button>
+                <div className="flex gap-2">
+                  <Button onClick={handleCopy} className="flex-1" variant="outline">
+                    <Download className="h-4 w-4 mr-2" />
+                    Copy to Clipboard
+                  </Button>
+                  {redactionMap.size > 0 && (
+                    <Button onClick={handleUnredact} className="flex-1" variant="outline">
+                      Unredact
+                    </Button>
+                  )}
+                </div>
               </CardContent>
             </Card>
           )}
