@@ -86,48 +86,117 @@ export class BrowserPIIDetector {
     return mapping[label.toUpperCase()] || label;
   }
 
-  // Additional regex patterns for Australian-specific PII
+  // Comprehensive patterns for Australian financial PII
   detectAustralianPII(text: string): PIIEntity[] {
     const patterns = [
+      // Personal Names (common patterns in documents)
       {
-        pattern: /\b(\d{2}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{3})\b/g,
-        label: 'ABN'
+        pattern: /(?:Client Name|Name|Adviser|Representative):\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/gi,
+        label: 'Person Name',
+        group: 1
+      },
+      // Dates of Birth and general dates
+      {
+        pattern: /(?:Date of Birth|DOB|Born):\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
+        label: 'Date of Birth',
+        group: 1
       },
       {
-        pattern: /\b(\d{3}[\s-]?\d{3}[\s-]?\d{3})\b/g,
-        label: 'TFN'
+        pattern: /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})\b/g,
+        label: 'Date',
+        group: 1
       },
+      // Australian addresses
       {
-        pattern: /\b(\d{4}[\s-]?\d{5}[\s-]?\d{1})\b/g,
-        label: 'Medicare Number'
+        pattern: /\b(\d{1,5}\s+[A-Za-z]+(?:\s+[A-Za-z]+)*\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Court|Ct|Place|Pl|Way|Crescent|Cres|Parade|Pde|Boulevard|Blvd|Terrace|Tce),?\s*[A-Za-z\s]+,?\s*(?:NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\s+\d{4})\b/gi,
+        label: 'Address'
       },
+      // Australian Business Number
+      {
+        pattern: /\b(?:ABN:?\s*)?(\d{2}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{3})\b/g,
+        label: 'ABN',
+        group: 1
+      },
+      // Tax File Number
+      {
+        pattern: /\b(?:TFN:?\s*)?(\d{3}[\s-]?\d{3}[\s-]?\d{3})\b/g,
+        label: 'TFN',
+        group: 1
+      },
+      // Medicare Number
+      {
+        pattern: /\b(?:Medicare:?\s*)?(\d{4}[\s-]?\d{5}[\s-]?\d{1})\b/g,
+        label: 'Medicare Number',
+        group: 1
+      },
+      // Email addresses
       {
         pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
         label: 'Email'
       },
+      // Australian phone numbers
       {
-        pattern: /(?:\+61[\s-]?)?(?:0[2-9][\s-]?)?[0-9]{4}[\s-]?[0-9]{4}\b/g,
+        pattern: /\b(?:\+61[\s-]?)?0[2-9](?:[\s-]?\d){8}\b/g,
         label: 'Phone Number'
       },
+      // Credit card numbers
       {
         pattern: /\b(?:\d{4}[\s-]?){3}\d{4}\b/g,
         label: 'Credit Card'
       },
+      // Bank account (BSB + Account)
       {
-        pattern: /\b(\d{3}-?\d{3}\s+\d{6,10})\b/g,
+        pattern: /\b(\d{3}[\s-]\d{3}[\s-]\d{4,10})\b/g,
         label: 'Bank Account'
+      },
+      // Currency amounts (for financial sensitivity)
+      {
+        pattern: /\$[\d,]+(?:\.\d{2})?/g,
+        label: 'Currency Amount'
+      },
+      // Employer/Company names
+      {
+        pattern: /(?:Employer|Company):\s*([A-Z][A-Za-z\s&]+(?:Pty Ltd|Ltd|Pty|Limited|Inc|Corporation))/gi,
+        label: 'Company Name',
+        group: 1
+      },
+      // Super fund names and account details
+      {
+        pattern: /(?:Superannuation|Super|Fund):\s*([A-Z][A-Za-z\s]+)/gi,
+        label: 'Super Fund',
+        group: 1
+      },
+      // Bank/Financial institution names
+      {
+        pattern: /\b(ANZ|NAB|Westpac|Commonwealth Bank|CBA|Macquarie|ING|Bendigo Bank|St\.?\s*George|Bank of Melbourne|BankWest|Suncorp)\b/gi,
+        label: 'Bank Name'
+      },
+      // Income amounts
+      {
+        pattern: /(?:Income|Salary|Wage):\s*\$[\d,]+/gi,
+        label: 'Income Amount'
+      },
+      // Age (when near personal info)
+      {
+        pattern: /\b(?:Age|Aged):\s*(\d{1,3})\b/gi,
+        label: 'Age',
+        group: 1
       }
     ];
 
     const entities: PIIEntity[] = [];
-    patterns.forEach(({ pattern, label }) => {
+    patterns.forEach(({ pattern, label, group }) => {
       let match;
-      while ((match = pattern.exec(text)) !== null) {
+      const regex = new RegExp(pattern.source, pattern.flags);
+      while ((match = regex.exec(text)) !== null) {
+        const matchText = group !== undefined ? match[group] : match[0];
+        const matchStart = group !== undefined ? match.index + match[0].indexOf(match[group]) : match.index;
+        
         entities.push({
-          text: match[0],
+          text: matchText,
           label,
-          start: match.index,
-          end: match.index + match[0].length,
+          start: matchStart,
+          end: matchStart + matchText.length,
           score: 1.0
         });
       }
