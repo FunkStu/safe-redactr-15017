@@ -86,53 +86,13 @@ export class BrowserPIIDetector {
     return mapping[label.toUpperCase()] || label;
   }
 
-  // Smart patterns for Australian financial PII - conservative approach
+  // Structured data patterns for Australian financial PII
+  // AI will handle names, organizations, and contextual data
   detectAustralianPII(text: string): PIIEntity[] {
     const entities: PIIEntity[] = [];
     
-    // 1. ACTUAL PERSON NAMES - enhanced patterns
-    // Pattern 1: Names after common labels
-    const labeledNamePattern = /(?:Client Name|Name|Adviser Name|Representative Name|Signed by|Prepared for|Clients?|Dear):\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/gi;
-    let match;
-    while ((match = labeledNamePattern.exec(text)) !== null) {
-      const name = match[1];
-      const start = match.index + match[0].indexOf(name);
-      entities.push({
-        text: name,
-        label: 'Person Name',
-        start,
-        end: start + name.length,
-        score: 1.0
-      });
-    }
-    
-    // Pattern 2: Full names with parenthetical age (e.g., "Mitchell Cowan (44)")
-    const nameAgePattern = /\b([A-Z][a-z]+\s+[A-Z][a-z]+)\s*\((\d{2})\)/g;
-    while ((match = nameAgePattern.exec(text)) !== null) {
-      const name = match[1];
-      entities.push({
-        text: name,
-        label: 'Person Name',
-        start: match.index,
-        end: match.index + name.length,
-        score: 1.0
-      });
-    }
-    
-    // 2. COMPLETE ADDRESSES - capture full address in one entity
-    const addressPattern = /\b(\d{1,5}\s+[A-Za-z]+(?:\s+[A-Za-z]+)*\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Court|Ct|Place|Pl|Way|Crescent|Cres|Parade|Pde|Boulevard|Blvd|Terrace|Tce),?\s*[A-Za-z\s]+,?\s*(?:NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\s+\d{4})\b/gi;
-    while ((match = addressPattern.exec(text)) !== null) {
-      entities.push({
-        text: match[1],
-        label: 'Address',
-        start: match.index,
-        end: match.index + match[1].length,
-        score: 1.0
-      });
-    }
-    
-    // 3. GOVERNMENT IDs
-    const patterns = [
+    // GOVERNMENT IDs (structured data AI often misses)
+    const governmentPatterns = [
       {
         pattern: /\b(?:ABN:?\s*)?(\d{2}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{3})\b/g,
         label: 'ABN'
@@ -147,7 +107,7 @@ export class BrowserPIIDetector {
       }
     ];
     
-    // 4. CONTACT INFORMATION
+    // CONTACT INFORMATION (structured formats)
     const contactPatterns = [
       {
         pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
@@ -159,7 +119,7 @@ export class BrowserPIIDetector {
       }
     ];
     
-    // 5. FINANCIAL ACCOUNT NUMBERS (actual PII)
+    // FINANCIAL ACCOUNT NUMBERS
     const accountPatterns = [
       {
         pattern: /\b(?:\d{4}[\s-]?){3}\d{4}\b/g,
@@ -171,7 +131,20 @@ export class BrowserPIIDetector {
       }
     ];
     
-    // 6. DATES OF BIRTH (actual PII)
+    // COMPLETE ADDRESSES (Australian format)
+    const addressPattern = /\b(\d{1,5}\s+[A-Za-z]+(?:\s+[A-Za-z]+)*\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Court|Ct|Place|Pl|Way|Crescent|Cres|Parade|Pde|Boulevard|Blvd|Terrace|Tce),?\s*[A-Za-z\s]+,?\s*(?:NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\s+\d{4})\b/gi;
+    let match;
+    while ((match = addressPattern.exec(text)) !== null) {
+      entities.push({
+        text: match[1],
+        label: 'Address',
+        start: match.index,
+        end: match.index + match[1].length,
+        score: 1.0
+      });
+    }
+    
+    // DATES OF BIRTH (with context)
     const dobPattern = /(?:Date of Birth|DOB|Born):\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi;
     while ((match = dobPattern.exec(text)) !== null) {
       const dob = match[1];
@@ -185,8 +158,8 @@ export class BrowserPIIDetector {
       });
     }
     
-    // Execute all patterns
-    [...patterns, ...contactPatterns, ...accountPatterns].forEach(({ pattern, label }) => {
+    // Execute all structured patterns
+    [...governmentPatterns, ...contactPatterns, ...accountPatterns].forEach(({ pattern, label }) => {
       let match;
       const regex = new RegExp(pattern.source, pattern.flags);
       while ((match = regex.exec(text)) !== null) {
@@ -207,39 +180,31 @@ export class BrowserPIIDetector {
   }
 
   async detectAll(text: string): Promise<PIIEntity[]> {
-    // Run regex patterns first (fast and more accurate for structured data)
-    const regexEntities = this.detectAustralianPII(text);
+    // Run both detectors in parallel for efficiency
+    const [aiEntities, regexEntities] = await Promise.all([
+      this.detectPII(text),
+      Promise.resolve(this.detectAustralianPII(text))
+    ]);
     
     // Create exclusion zones for regex-detected entities
-    // AI should not detect anything within these ranges
     const exclusionZones = regexEntities.map(e => ({ 
       start: e.start, 
       end: e.end,
       label: e.label 
     }));
     
-    // Run AI detection
-    const aiEntities = await this.detectPII(text);
-    
-    // Filter out AI entities that overlap with our structured patterns
+    // Filter out AI entities that overlap with structured data we already caught
     const filteredAIEntities = aiEntities.filter(entity => {
-      // Skip if this entity overlaps with ANY exclusion zone
       const overlaps = exclusionZones.some(zone => {
-        // Check if entity overlaps with zone
         return !(entity.end <= zone.start || entity.start >= zone.end);
       });
-      
-      // Also filter out generic AI location/org detections that are likely
-      // part of addresses or company names we already caught
-      const isGenericLocation = entity.label === 'Location' && entity.text.length < 15;
-      const isGenericOrg = entity.label === 'Organization' && entity.text.length < 20;
-      
-      return !overlaps && !isGenericLocation && !isGenericOrg;
+      return !overlaps;
     });
 
-    // Merge without duplicates
+    // Combine AI detections with structured data detections
     const allEntities = [...filteredAIEntities, ...regexEntities];
     
+    // Remove duplicates
     const uniqueEntities = allEntities.filter((entity, index, self) => 
       index === self.findIndex(e => 
         e.start === entity.start && 
