@@ -230,12 +230,12 @@ export function PIIDetector() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // File size validation (10MB max)
-    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    // File size validation (1MB max for JSON to prevent JSON bomb attacks)
+    const MAX_FILE_SIZE = 1 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
       toast({
         title: 'File Too Large',
-        description: 'Maximum file size is 10MB',
+        description: 'Maximum file size is 1MB for JSON files',
         variant: 'destructive',
       });
       e.target.value = '';
@@ -261,6 +261,18 @@ export function PIIDetector() {
         // Additional size validation
         if (content.length > MAX_FILE_SIZE) {
           throw new Error('Content exceeds size limit');
+        }
+
+        // Pre-parse depth validation to prevent JSON bomb attacks
+        const nestingLevel = (content.match(/{/g) || []).length;
+        if (nestingLevel > 100) {
+          throw new Error('JSON structure too deeply nested (max 100 levels)');
+        }
+
+        // Check for excessive array/object count
+        const objectCount = (content.match(/[{[]/g) || []).length;
+        if (objectCount > 10000) {
+          throw new Error('JSON structure too complex (max 10,000 elements)');
         }
         
         const data = JSON.parse(content);
