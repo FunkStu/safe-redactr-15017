@@ -257,18 +257,22 @@ export class BrowserPIIDetector {
       });
     }
     
-    // FULL NAMES - First + Last pattern
+    // FULL NAMES - First + Last pattern (with name database verification)
     const fullNamePattern = /\b([A-Z][a-z]{2,15})\s+([A-Z][a-z]{2,20})\b/g;
-    const excludeCommonPhrases = new Set([
-      'New South', 'South Wales', 'Super Fund', 'Life Insurance', 'Investment Portfolio',
-      'Account Balance', 'Tax File', 'Financial Services', 'Asset Allocation'
-    ]);
     
     while ((match = fullNamePattern.exec(text)) !== null) {
-      const fullName = match[0];
-      if (excludeCommonPhrases.has(fullName)) continue;
+      const firstName = match[1];
+      const lastName = match[2];
+      
+      // REQUIRE at least one word to be in the name database
+      const isValidName = this.nameDatabase.isFirstName(firstName) || 
+                         this.nameDatabase.isLastName(lastName) ||
+                         this.nameDatabase.isFirstName(lastName);
+      
+      if (!isValidName) continue;
       
       // Check if AI already caught this
+      const fullName = match[0];
       const alreadyDetected = entities.some(e => 
         e.start <= match.index && e.end >= match.index + fullName.length
       );
