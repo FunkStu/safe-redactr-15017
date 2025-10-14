@@ -90,10 +90,11 @@ export class BrowserPIIDetector {
   detectAustralianPII(text: string): PIIEntity[] {
     const entities: PIIEntity[] = [];
     
-    // 1. ACTUAL PERSON NAMES - only after specific labels
-    const namePattern = /(?:Client Name|Name|Adviser Name|Representative Name|Signed by|Prepared for):\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/gi;
+    // 1. ACTUAL PERSON NAMES - enhanced patterns
+    // Pattern 1: Names after common labels
+    const labeledNamePattern = /(?:Client Name|Name|Adviser Name|Representative Name|Signed by|Prepared for|Clients?|Dear):\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/gi;
     let match;
-    while ((match = namePattern.exec(text)) !== null) {
+    while ((match = labeledNamePattern.exec(text)) !== null) {
       const name = match[1];
       const start = match.index + match[0].indexOf(name);
       entities.push({
@@ -101,6 +102,19 @@ export class BrowserPIIDetector {
         label: 'Person Name',
         start,
         end: start + name.length,
+        score: 1.0
+      });
+    }
+    
+    // Pattern 2: Full names with parenthetical age (e.g., "Mitchell Cowan (44)")
+    const nameAgePattern = /\b([A-Z][a-z]+\s+[A-Z][a-z]+)\s*\((\d{2})\)/g;
+    while ((match = nameAgePattern.exec(text)) !== null) {
+      const name = match[1];
+      entities.push({
+        text: name,
+        label: 'Person Name',
+        start: match.index,
+        end: match.index + name.length,
         score: 1.0
       });
     }
