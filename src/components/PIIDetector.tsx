@@ -371,13 +371,35 @@ export function PIIDetector() {
             />
           </div>
 
-          <Button 
-            onClick={handleDetect} 
-            disabled={!inputText.trim() || isDetecting || initProgress === 0}
-            className="w-full"
-          >
-            {isDetecting ? 'Detecting PII...' : 'Detect PII'}
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              onClick={handleDetect} 
+              disabled={!inputText.trim() || isDetecting || initProgress === 0}
+              className="flex-1"
+            >
+              {isDetecting ? 'Detecting PII...' : 'Detect PII'}
+            </Button>
+            {redactionMap.size > 0 && inputText.trim() && (
+              <Button 
+                onClick={() => {
+                  let result = inputText;
+                  redactionMap.forEach((originalText, placeholder) => {
+                    result = result.split(placeholder).join(originalText);
+                  });
+                  setInputText(result);
+                  toast({
+                    title: 'Unredaction Complete',
+                    description: `Restored ${redactionMap.size} items in input text`,
+                    duration: 3000,
+                  });
+                }}
+                variant="secondary"
+                className="flex-1"
+              >
+                Unredact Input Text
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
 
