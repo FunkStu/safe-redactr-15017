@@ -7,6 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { BrowserPIIDetector, PIIEntity } from '@/lib/pii-detector';
 import { Download, Upload, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
+import { ComplianceDialog } from '@/components/ComplianceDialog';
 
 export function PIIDetector() {
   const [inputText, setInputText] = useState('');
@@ -431,10 +432,10 @@ export function PIIDetector() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <Sparkles className="h-6 w-6 text-primary" />
-            <CardTitle>AI-Powered PII Detector</CardTitle>
+            <CardTitle>AI Powered PII Redactr</CardTitle>
           </div>
           <CardDescription>
-            100% local processing - no data leaves your browser. Compliant with Australian financial regulations.
+            100% local processing - no data leaves your browser. Compliant with Australian financial regulations. <ComplianceDialog />
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
