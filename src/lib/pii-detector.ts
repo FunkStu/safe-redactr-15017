@@ -189,7 +189,20 @@ export class BrowserPIIDetector {
       }
     }
     
-    // Pattern 3: Names as line subjects
+    // Pattern 3: Role/occupation followed by name in parentheses
+    const roleNamePattern = /\b(?:Business Owner|Teacher|Manager|Director|Owner|Engineer|Consultant|Accountant|Lawyer|Doctor|Nurse)\s*\(([A-Z][a-z]+)/g;
+    while ((match = roleNamePattern.exec(text)) !== null) {
+      const name = match[1];
+      entities.push({
+        text: name,
+        label: 'Person Name',
+        start: match.index + match[0].indexOf(name),
+        end: match.index + match[0].indexOf(name) + name.length,
+        score: 0.95
+      });
+    }
+    
+    // Pattern 4: Names as line subjects
     const subjectNamePattern = /^([A-Z][a-z]+):\s*(?:\$|Business|Teacher|Secondary|Manager|Director|Owner)/gm;
     while ((match = subjectNamePattern.exec(text)) !== null) {
       const name = match[1];
@@ -202,7 +215,7 @@ export class BrowserPIIDetector {
       });
     }
     
-    // Pattern 4: Full names with age (enhanced with DOB calculation)
+    // Pattern 5: Full names with age (enhanced with DOB calculation)
     const nameAgePattern = /\b([A-Z][a-z]+\s+[A-Z][a-z]+)\s*\((\d{2})\)/g;
     while ((match = nameAgePattern.exec(text)) !== null) {
       const name = match[1];
