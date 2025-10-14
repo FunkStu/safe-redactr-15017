@@ -165,6 +165,23 @@ export class BrowserPIIDetector {
     const normalized = text.trim().replace(/[.,!?;:]/g, '');
     const words = normalized.split(/\s+/);
     
+    // CRITICAL: Blacklist common business/financial terms the AI incorrectly labels as names
+    const businessBlacklist = new Set([
+      'card', 'credit', 'debit', 'account', 'balance', 'fund', 'funds',
+      'plan', 'service', 'services', 'analysis', 'action', 'adviser', 'advisor',
+      'client', 'mortgage', 'retain', 'current', 'growth', 'model', 'balanced',
+      'considerations', 'market', 'implementation', 'capital', 'gains',
+      'remuneration', 'ongoing', 'disclosures', 'proceed', 'form', 'solutions',
+      'school', 'secondary', 'long', 'dear', 'fees', 'july', 'august', 'january',
+      'representative', 'authorised', 'authorized', 'orion', 'advice', 'engineering',
+      'street', 'strategic', 'pty', 'ltd'
+    ]);
+    
+    // If ANY word is a blacklisted business term, reject immediately
+    if (words.some(word => businessBlacklist.has(word.toLowerCase()))) {
+      return false;
+    }
+    
     // Filter out words that are clearly not names (all lowercase, numbers, etc.)
     const cleanWords = words.filter(word => {
       // Must start with capital letter
