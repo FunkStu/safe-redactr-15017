@@ -165,37 +165,59 @@ export class BrowserPIIDetector {
     const normalized = text.trim().replace(/[.,!?;:]/g, '');
     const words = normalized.split(/\s+/);
     
-    // Single word: Must be in name database
-    if (words.length === 1) {
-      return this.nameDatabase.isFirstName(words[0]) || this.nameDatabase.isLastName(words[0]);
+    // Filter out words that are clearly not names (all lowercase, numbers, etc.)
+    const cleanWords = words.filter(word => {
+      // Must start with capital letter
+      if (!/^[A-Z]/.test(word)) return false;
+      // Must not contain numbers
+      if (/\d/.test(word)) return false;
+      // Must be reasonable length for a name (2-20 chars)
+      if (word.length < 2 || word.length > 20) return false;
+      return true;
+    });
+    
+    if (cleanWords.length === 0) return false;
+    
+    const titles = new Set(['mr', 'mrs', 'ms', 'dr', 'miss', 'prof', 'sir', 'dame']);
+    
+    // Single word: MUST be in name database
+    if (cleanWords.length === 1) {
+      const word = cleanWords[0];
+      return this.nameDatabase.isFirstName(word) || this.nameDatabase.isLastName(word);
     }
     
-    // Two words: Check if it's a valid First+Last or Title+Name pattern
-    if (words.length === 2) {
-      const [first, second] = words;
+    // Two words: STRICT validation
+    if (cleanWords.length === 2) {
+      const [first, second] = cleanWords;
       
-      // First + Last name pattern
-      if (this.nameDatabase.isFirstName(first) && this.nameDatabase.isLastName(second)) {
-        return true;
+      // Title + Name: second word MUST be in database
+      if (titles.has(first.toLowerCase())) {
+        return this.nameDatabase.isFirstName(second) || this.nameDatabase.isLastName(second);
       }
       
-      // Title + Name pattern (Mr./Ms./Dr. etc.)
-      const titles = new Set(['mr', 'mrs', 'ms', 'dr', 'miss', 'prof', 'sir', 'dame']);
-      if (titles.has(first.toLowerCase()) && 
-          (this.nameDatabase.isFirstName(second) || this.nameDatabase.isLastName(second))) {
-        return true;
-      }
+      // First + Last: BOTH words must be in database
+      const firstValid = this.nameDatabase.isFirstName(first);
+      const secondValid = this.nameDatabase.isLastName(second) || this.nameDatabase.isFirstName(second);
       
-      return false;
+      return firstValid && secondValid;
     }
     
-    // Three or more words: Require majority to be valid names
-    const validNameWords = words.filter(word => 
-      this.nameDatabase.isFirstName(word) || this.nameDatabase.isLastName(word)
-    );
+    // Three or more words: ALL non-title words must be in database
+    let validCount = 0;
+    let requiredCount = 0;
     
-    // At least 50% of words must be valid names
-    return validNameWords.length >= Math.ceil(words.length / 2);
+    for (const word of cleanWords) {
+      // Skip titles
+      if (titles.has(word.toLowerCase())) continue;
+      
+      requiredCount++;
+      if (this.nameDatabase.isFirstName(word) || this.nameDatabase.isLastName(word)) {
+        validCount++;
+      }
+    }
+    
+    // ALL non-title words must be valid names
+    return requiredCount > 0 && validCount === requiredCount;
   }
 
   private mapLabelToPII(label: string): string {
