@@ -120,19 +120,65 @@ export class BrowserPIIDetector {
     // STEP 2: Detect ages and calculate potential DOBs
     const ageData: Map<string, { age: number; calculatedDOB: Date }> = new Map();
     
-    // PERSON NAMES - Pattern-based detection
+    // PRIMARY NAME DETECTION - Name Database Lookup
+    // Check all capitalized words against the name database
+    const capitalizedWordPattern = /\b([A-Z][a-z]{2,15})\b/g;
+    const excludeCommonWords = new Set([
+      'Balance', 'Fund', 'Super', 'Investment', 'Option', 'Proposed', 'Action',
+      'Current', 'Growth', 'Balanced', 'Conservative', 'Aggressive', 'Moderate',
+      'Account', 'Portfolio', 'Asset', 'Liability', 'Income', 'Expense',
+      'Australian', 'Ethical', 'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+      'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+      'Street', 'Road', 'Avenue', 'Drive', 'Lane', 'Court', 'Place',
+      'Business', 'Owner', 'Teacher', 'Manager', 'Director', 'Engineer', 'Consultant'
+    ]);
+    
+    while ((match = capitalizedWordPattern.exec(text)) !== null) {
+      const word = match[1];
+      
+      // Skip common business/financial terms
+      if (excludeCommonWords.has(word)) continue;
+      
+      // Check if already detected
+      const alreadyDetected = entities.some(e => 
+        e.start <= match.index && e.end >= match.index + word.length
+      );
+      if (alreadyDetected) continue;
+      
+      // Check against name databases
+      const isFirst = this.nameDatabase.isFirstName(word);
+      const isLast = this.nameDatabase.isLastName(word);
+      
+      if (isFirst || isLast) {
+        entities.push({
+          text: word,
+          label: 'Person Name',
+          start: match.index,
+          end: match.index + word.length,
+          score: isFirst ? 0.85 : 0.80
+        });
+      }
+    }
+    
+    // SECONDARY PATTERN DETECTION - High confidence patterns
     
     // Pattern 1: Formal salutations (Dear John Smith,)
     const salutationPattern = /\b(?:Dear|Hello|Hi)\s+([A-Z][a-z]+(?:\s+(?:and|&)\s+[A-Z][a-z]+)?(?:\s+[A-Z][a-z]+)?)/g;
     while ((match = salutationPattern.exec(text)) !== null) {
       const name = match[1];
-      entities.push({
-        text: name,
-        label: 'Person Name',
-        start: match.index + match[0].indexOf(name),
-        end: match.index + match[0].indexOf(name) + name.length,
-        score: 1.0
-      });
+      const alreadyDetected = entities.some(e => 
+        e.start <= match.index && e.end >= match.index + match[0].length
+      );
+      if (!alreadyDetected) {
+        entities.push({
+          text: name,
+          label: 'Person Name',
+          start: match.index + match[0].indexOf(name),
+          end: match.index + match[0].indexOf(name) + name.length,
+          score: 1.0
+        });
+      }
     }
     
     // Pattern 2: Client/Adviser labels (with age extraction)
@@ -144,18 +190,24 @@ export class BrowserPIIDetector {
         const age = match[2] ? parseInt(match[2]) : null;
         const start = match.index + match[0].indexOf(name);
         
-        entities.push({
-          text: name,
-          label: 'Person Name',
-          start,
-          end: start + name.length,
-          score: 1.0,
-          metadata: age && documentDate ? {
-            age,
-            documentDate: documentDate.toISOString().split('T')[0],
-            calculatedDOB: this.calculateDOBFromAge(age, documentDate).toISOString().split('T')[0]
-          } : undefined
-        });
+        const alreadyDetected = entities.some(e => 
+          e.start <= start && e.end >= start + name.length
+        );
+        
+        if (!alreadyDetected) {
+          entities.push({
+            text: name,
+            label: 'Person Name',
+            start,
+            end: start + name.length,
+            score: 1.0,
+            metadata: age && documentDate ? {
+              age,
+              documentDate: documentDate.toISOString().split('T')[0],
+              calculatedDOB: this.calculateDOBFromAge(age, documentDate).toISOString().split('T')[0]
+            } : undefined
+          });
+        }
         
         if (age && documentDate) {
           const calculatedDOB = this.calculateDOBFromAge(age, documentDate);
@@ -169,18 +221,24 @@ export class BrowserPIIDetector {
         const age = match[4] ? parseInt(match[4]) : null;
         const start = match.index + match[0].indexOf(name);
         
-        entities.push({
-          text: name,
-          label: 'Person Name',
-          start,
-          end: start + name.length,
-          score: 1.0,
-          metadata: age && documentDate ? {
-            age,
-            documentDate: documentDate.toISOString().split('T')[0],
-            calculatedDOB: this.calculateDOBFromAge(age, documentDate).toISOString().split('T')[0]
-          } : undefined
-        });
+        const alreadyDetected = entities.some(e => 
+          e.start <= start && e.end >= start + name.length
+        );
+        
+        if (!alreadyDetected) {
+          entities.push({
+            text: name,
+            label: 'Person Name',
+            start,
+            end: start + name.length,
+            score: 1.0,
+            metadata: age && documentDate ? {
+              age,
+              documentDate: documentDate.toISOString().split('T')[0],
+              calculatedDOB: this.calculateDOBFromAge(age, documentDate).toISOString().split('T')[0]
+            } : undefined
+          });
+        }
         
         if (age && documentDate) {
           const calculatedDOB = this.calculateDOBFromAge(age, documentDate);
@@ -189,50 +247,30 @@ export class BrowserPIIDetector {
       }
     }
     
-    // Pattern 3: Role/occupation followed by name in parentheses
-    const roleNamePattern = /\b(?:Business Owner|Teacher|Manager|Director|Owner|Engineer|Consultant|Accountant|Lawyer|Doctor|Nurse)\s*\(([A-Z][a-z]+)/g;
-    while ((match = roleNamePattern.exec(text)) !== null) {
-      const name = match[1];
-      entities.push({
-        text: name,
-        label: 'Person Name',
-        start: match.index + match[0].indexOf(name),
-        end: match.index + match[0].indexOf(name) + name.length,
-        score: 0.95
-      });
-    }
-    
-    // Pattern 4: Names as line subjects
-    const subjectNamePattern = /^([A-Z][a-z]+):\s*(?:\$|Business|Teacher|Secondary|Manager|Director|Owner)/gm;
-    while ((match = subjectNamePattern.exec(text)) !== null) {
-      const name = match[1];
-      entities.push({
-        text: name,
-        label: 'Person Name',
-        start: match.index,
-        end: match.index + name.length,
-        score: 0.95
-      });
-    }
-    
-    // Pattern 5: Full names with age (enhanced with DOB calculation)
+    // Pattern 3: Full names with age (enhanced with DOB calculation)
     const nameAgePattern = /\b([A-Z][a-z]+\s+[A-Z][a-z]+)\s*\((\d{2})\)/g;
     while ((match = nameAgePattern.exec(text)) !== null) {
       const name = match[1];
       const age = parseInt(match[2]);
       
-      entities.push({
-        text: name,
-        label: 'Person Name',
-        start: match.index,
-        end: match.index + name.length,
-        score: 1.0,
-        metadata: documentDate ? {
-          age,
-          documentDate: documentDate.toISOString().split('T')[0],
-          calculatedDOB: this.calculateDOBFromAge(age, documentDate).toISOString().split('T')[0]
-        } : { age }
-      });
+      const alreadyDetected = entities.some(e => 
+        e.start <= match.index && e.end >= match.index + name.length
+      );
+      
+      if (!alreadyDetected) {
+        entities.push({
+          text: name,
+          label: 'Person Name',
+          start: match.index,
+          end: match.index + name.length,
+          score: 1.0,
+          metadata: documentDate ? {
+            age,
+            documentDate: documentDate.toISOString().split('T')[0],
+            calculatedDOB: this.calculateDOBFromAge(age, documentDate).toISOString().split('T')[0]
+          } : { age }
+        });
+      }
       
       if (documentDate) {
         const calculatedDOB = this.calculateDOBFromAge(age, documentDate);
@@ -252,36 +290,6 @@ export class BrowserPIIDetector {
           calculatedDOB: this.calculateDOBFromAge(age, documentDate).toISOString().split('T')[0]
         } : { age }
       });
-    }
-    
-    // NAME DATABASE DETECTION
-    const capitalizedPairPattern = /\b([A-Z][a-z]{1,15})\s+([A-Z][a-z]{1,15})\b/g;
-    while ((match = capitalizedPairPattern.exec(text)) !== null) {
-      const firstName = match[1];
-      const lastName = match[2];
-      const fullName = `${firstName} ${lastName}`;
-      
-      const alreadyDetected = entities.some(e => 
-        e.start <= match.index && e.end >= match.index + fullName.length
-      );
-      if (alreadyDetected) continue;
-      
-      if (this.nameDatabase.isFullName(firstName, lastName)) {
-        const beforeText = text.substring(Math.max(0, match.index - 50), match.index);
-        const afterText = text.substring(match.index + fullName.length, Math.min(text.length, match.index + fullName.length + 50));
-        const context = beforeText + afterText;
-        
-        const excludePatterns = /\b(Pty Ltd|Limited|Company|Corporation|Street|Road|Avenue|City|State|Country)\b/i;
-        if (excludePatterns.test(context)) continue;
-        
-        entities.push({
-          text: fullName,
-          label: 'Person Name',
-          start: match.index,
-          end: match.index + fullName.length,
-          score: 0.90
-        });
-      }
     }
     
     // DATES OF BIRTH - Enhanced with calculated DOB matching
