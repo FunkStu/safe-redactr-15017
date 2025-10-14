@@ -446,8 +446,6 @@ export function PIIDetector() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <AccuracyDisclaimer />
-          
           {!isInitializing && initProgress === 0 && (
             <div className="flex items-center gap-4 p-4 border rounded-lg bg-muted/50">
               <AlertCircle className="h-5 w-5 text-muted-foreground" />
@@ -469,10 +467,32 @@ export function PIIDetector() {
           )}
 
           {initProgress > 0 && !isInitializing && (
-            <div className="flex items-center gap-2 p-3 border rounded-lg bg-green-50 dark:bg-green-950">
-              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
-              <p className="text-sm font-medium text-green-600 dark:text-green-400">AI Model Ready</p>
-            </div>
+            <>
+              <div className="flex items-center gap-2 p-3 border rounded-lg bg-green-50 dark:bg-green-950">
+                <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                <p className="text-sm font-medium text-green-600 dark:text-green-400">AI Model Ready</p>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6 p-4 border rounded-lg bg-muted/30">
+                <div className="space-y-2">
+                  <h3 className="font-semibold text-sm">To Redact</h3>
+                  <ol className="text-sm space-y-1 text-muted-foreground list-decimal list-inside">
+                    <li>Paste text or upload your file</li>
+                    <li>Click Redact PII</li>
+                    <li>Check output and manually redact as needed</li>
+                    <li>Export Mapping and store safely</li>
+                  </ol>
+                </div>
+                <div className="space-y-2">
+                  <h3 className="font-semibold text-sm">To Unredact</h3>
+                  <ol className="text-sm space-y-1 text-muted-foreground list-decimal list-inside">
+                    <li>Import previous mapping</li>
+                    <li>Paste redacted text</li>
+                    <li>Check output</li>
+                  </ol>
+                </div>
+              </div>
+            </>
           )}
 
           <div className="space-y-2">
@@ -534,17 +554,17 @@ export function PIIDetector() {
                   redactionMap.forEach((originalText, placeholder) => {
                     result = result.split(placeholder).join(originalText);
                   });
-                  setInputText(result);
+                  setRedactedText(result);
                   toast({
                     title: 'Unredaction Complete',
-                    description: `Restored ${redactionMap.size} items in input text`,
+                    description: `Restored ${redactionMap.size} items - check output below`,
                     duration: 3000,
                   });
                 }}
                 variant="secondary"
                 className="flex-1"
               >
-                Unredact Input Text
+                Unredact
               </Button>
             )}
           </div>
@@ -617,12 +637,13 @@ export function PIIDetector() {
           {redactedText && (
             <Card>
               <CardHeader>
-                <CardTitle>Redacted Text</CardTitle>
+                <CardTitle>Output</CardTitle>
                 <CardDescription>
-                  PII has been replaced with labeled placeholders
+                  Review the results below
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <AccuracyDisclaimer />
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-sm font-medium">Redacted Output</label>
