@@ -330,21 +330,38 @@ export function PIIDetector() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">Input Text</label>
-              <label htmlFor="file-upload">
-                <Button variant="outline" size="sm" asChild>
-                  <span className="cursor-pointer flex items-center gap-2">
-                    <Upload className="h-4 w-4" />
-                    Upload File
-                  </span>
-                </Button>
-                <input
-                  id="file-upload"
-                  type="file"
-                  accept=".txt"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
-              </label>
+              <div className="flex gap-2">
+                <label htmlFor="file-upload">
+                  <Button variant="outline" size="sm" asChild>
+                    <span className="cursor-pointer flex items-center gap-2">
+                      <Upload className="h-4 w-4" />
+                      Upload File
+                    </span>
+                  </Button>
+                  <input
+                    id="file-upload"
+                    type="file"
+                    accept=".txt"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                  />
+                </label>
+                <label htmlFor="mapping-upload-top">
+                  <Button variant="outline" size="sm" asChild>
+                    <span className="cursor-pointer flex items-center gap-2">
+                      <Upload className="h-4 w-4" />
+                      Import Mapping
+                    </span>
+                  </Button>
+                  <input
+                    id="mapping-upload-top"
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={handleImportMapping}
+                  />
+                </label>
+              </div>
             </div>
             <Textarea
               value={inputText}
