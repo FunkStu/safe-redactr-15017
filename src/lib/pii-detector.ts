@@ -101,7 +101,17 @@ export class BrowserPIIDetector {
       start: entity.start,
       end: entity.end,
       score: entity.score
-    })).filter((entity: PIIEntity) => entity.score > 0.6); // Lower threshold for AI
+    })).filter((entity: PIIEntity) => {
+      // Require higher confidence for AI detections
+      if (entity.score < 0.75) return false;
+      
+      // Filter out false positives for person names
+      if (entity.label === 'Person Name') {
+        return this.isLikelyPersonName(entity.text);
+      }
+      
+      return true;
+    });
     
     entities.push(...aiEntities);
     
@@ -148,6 +158,59 @@ export class BrowserPIIDetector {
     }
     
     return entities;
+  }
+
+  private isLikelyPersonName(text: string): boolean {
+    // Remove common punctuation and normalize
+    const normalized = text.trim().replace(/[.,!?;:]/g, '');
+    const words = normalized.split(/\s+/);
+    
+    // Business/financial term patterns that are NOT person names
+    const businessTerms = new Set([
+      'card', 'account', 'service', 'plan', 'model', 'fund', 'balance',
+      'portfolio', 'investment', 'asset', 'liability', 'credit', 'debit',
+      'growth', 'income', 'expense', 'profit', 'loss', 'rate', 'return',
+      'adviser', 'advisor', 'client', 'action', 'analysis', 'strategy',
+      'managed', 'management', 'platform', 'wrap', 'super', 'benefit',
+      'admin', 'administration', 'custodian', 'liquidity', 'reporting',
+      'rationale', 'trust', 'contributions', 'considerations', 'implementation',
+      'step', 'task', 'responsible', 'timeline', 'remuneration', 'fee',
+      'notes', 'advice', 'ongoing', 'disclosures', 'assumptions', 'contribution',
+      'gains', 'taxation', 'office', 'sample', 'comparison', 'profile',
+      'questionnaire', 'summary', 'setup', 'checklist', 'proceed', 'statement',
+      'form', 'solutions', 'school', 'secondary', 'retain', 'mortgage',
+      'current', 'funds', 'initial', 'important', 'capital', 'australian'
+    ]);
+    
+    // Month names are not person names when in pairs
+    const months = new Set([
+      'january', 'february', 'march', 'april', 'may', 'june',
+      'july', 'august', 'september', 'october', 'november', 'december'
+    ]);
+    
+    // Check each word in the detection
+    for (const word of words) {
+      const lower = word.toLowerCase();
+      
+      // If any word is a business term, reject it
+      if (businessTerms.has(lower)) return false;
+      
+      // If any word is a month name, reject it
+      if (months.has(lower)) return false;
+    }
+    
+    // If it's a single short word (< 3 chars), reject unless it's in name database
+    if (words.length === 1 && words[0].length < 3) return false;
+    
+    // For multi-word detections, at least one word should be in the name database
+    if (words.length > 1) {
+      const hasValidName = words.some(word => 
+        this.nameDatabase.isFirstName(word) || this.nameDatabase.isLastName(word)
+      );
+      if (!hasValidName) return false;
+    }
+    
+    return true;
   }
 
   private mapLabelToPII(label: string): string {
