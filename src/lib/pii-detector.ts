@@ -120,43 +120,78 @@ export class BrowserPIIDetector {
     // STEP 2: Detect ages and calculate potential DOBs
     const ageData: Map<string, { age: number; calculatedDOB: Date }> = new Map();
     
-    // PRIMARY NAME DETECTION - Name Database Lookup
-    // Check all capitalized words against the name database
-    const capitalizedWordPattern = /\b([A-Z][a-z]{2,15})\b/g;
-    const excludeCommonWords = new Set([
-      'Balance', 'Fund', 'Super', 'Investment', 'Option', 'Proposed', 'Action',
-      'Current', 'Growth', 'Balanced', 'Conservative', 'Aggressive', 'Moderate',
-      'Account', 'Portfolio', 'Asset', 'Liability', 'Income', 'Expense',
-      'Australian', 'Ethical', 'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
-      'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
-      'Street', 'Road', 'Avenue', 'Drive', 'Lane', 'Court', 'Place',
-      'Business', 'Owner', 'Teacher', 'Manager', 'Director', 'Engineer', 'Consultant'
-    ]);
-    
-    while ((match = capitalizedWordPattern.exec(text)) !== null) {
-      const word = match[1];
-      
-      // Skip common business/financial terms
-      if (excludeCommonWords.has(word)) continue;
+    // PRIMARY NAME DETECTION - Name Database with Context
+    // First pass: Detect full names (firstName + lastName pairs)
+    const capitalizedPairPattern = /\b([A-Z][a-z]{2,15})\s+([A-Z][a-z]{2,15})\b/g;
+    while ((match = capitalizedPairPattern.exec(text)) !== null) {
+      const firstName = match[1];
+      const lastName = match[2];
+      const fullName = `${firstName} ${lastName}`;
       
       // Check if already detected
+      const alreadyDetected = entities.some(e => 
+        e.start <= match.index && e.end >= match.index + fullName.length
+      );
+      if (alreadyDetected) continue;
+      
+      // Check if it's a valid first name + last name combination
+      if (this.nameDatabase.isFullName(firstName, lastName)) {
+        entities.push({
+          text: fullName,
+          label: 'Person Name',
+          start: match.index,
+          end: match.index + fullName.length,
+          score: 0.90
+        });
+      }
+    }
+    
+    // Second pass: Detect standalone first names ONLY (not last names to avoid false positives)
+    const excludeCommonWords = new Set([
+      // Financial/Business terms
+      'Balance', 'Fund', 'Super', 'Investment', 'Option', 'Proposed', 'Action',
+      'Current', 'Growth', 'Balanced', 'Conservative', 'Aggressive', 'Moderate',
+      'Account', 'Portfolio', 'Asset', 'Liability', 'Income', 'Expense', 'Credit',
+      'Card', 'Net', 'Risk', 'Keep', 'Client', 'Model', 'Daily', 'Market', 'Plan',
+      'Step', 'Fees', 'Service', 'Fee', 'Gains', 'Mix', 'Sample', 'Form', 'Total',
+      'Amount', 'Value', 'Price', 'Cost', 'Rate', 'Return', 'Profit', 'Loss',
+      'Stock', 'Bond', 'Cash', 'Property', 'Trust', 'Company', 'Business',
+      // Locations
+      'Australian', 'Australia', 'Sydney', 'Melbourne', 'Brisbane', 'Perth', 'Adelaide',
+      'Street', 'Road', 'Avenue', 'Drive', 'Lane', 'Court', 'Place', 'Way', 'Close',
+      // Time
+      'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 
+      'September', 'October', 'November', 'December', 'Monday', 'Tuesday', 'Wednesday', 
+      'Thursday', 'Friday', 'Saturday', 'Sunday', 'Today', 'Tomorrow', 'Yesterday',
+      // Roles/Titles
+      'Owner', 'Teacher', 'Manager', 'Director', 'Engineer', 'Consultant', 'Adviser',
+      'Representative', 'Member', 'Partner', 'Applicant', 'Employee', 'Staff',
+      // Common words
+      'Table', 'Report', 'Document', 'Page', 'Section', 'Note', 'Summary', 'Detail',
+      'Overview', 'Analysis', 'Review', 'Update', 'Change', 'Status', 'Type', 'Level'
+    ]);
+    
+    const singleWordPattern = /\b([A-Z][a-z]{2,15})\b/g;
+    while ((match = singleWordPattern.exec(text)) !== null) {
+      const word = match[1];
+      
+      // Skip excluded words
+      if (excludeCommonWords.has(word)) continue;
+      
+      // Check if already detected as part of a full name
       const alreadyDetected = entities.some(e => 
         e.start <= match.index && e.end >= match.index + word.length
       );
       if (alreadyDetected) continue;
       
-      // Check against name databases
-      const isFirst = this.nameDatabase.isFirstName(word);
-      const isLast = this.nameDatabase.isLastName(word);
-      
-      if (isFirst || isLast) {
+      // ONLY detect if it's a known first name (not last name alone)
+      if (this.nameDatabase.isFirstName(word)) {
         entities.push({
           text: word,
           label: 'Person Name',
           start: match.index,
           end: match.index + word.length,
-          score: isFirst ? 0.85 : 0.80
+          score: 0.85
         });
       }
     }
