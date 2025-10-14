@@ -22,7 +22,7 @@ export class BrowserPIIDetector {
   private classifier: any = null;
   private isLoading = false;
   private nameDatabase: NameDatabase;
-  private readonly modelVersion = 'Xenova/bert-base-NER@4a9c4d5'; // Pin specific commit for integrity
+  private readonly modelVersion = 'Xenova/bert-base-NER';
 
   constructor() {
     this.nameDatabase = new NameDatabase();
