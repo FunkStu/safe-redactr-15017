@@ -341,6 +341,36 @@ export class BrowserPIIDetector {
       });
     }
     
+    // GENERAL DOB PATTERN - Catch all dates that could be DOBs (year range 1920-2024)
+    const generalDatePattern = /\b(\d{1,2}[\/\-]\d{1,2}[\/\-](\d{4}|\d{2}))\b/g;
+    while ((match = generalDatePattern.exec(text)) !== null) {
+      const dateStr = match[1];
+      const yearMatch = match[2];
+      let year = parseInt(yearMatch);
+      
+      // Convert 2-digit year to 4-digit
+      if (year < 100) {
+        year += year > 30 ? 1900 : 2000;
+      }
+      
+      // Only flag if year looks like a birth year (1920-2024)
+      if (year >= 1920 && year <= 2024) {
+        // Check if already marked as DOB
+        const alreadyDOB = entities.some(e => 
+          e.label === 'Date of Birth' && e.start === match.index
+        );
+        if (!alreadyDOB) {
+          entities.push({
+            text: dateStr,
+            label: 'Date of Birth',
+            start: match.index,
+            end: match.index + dateStr.length,
+            score: 0.90
+          });
+        }
+      }
+    }
+    
     // DETECT DATES MATCHING CALCULATED DOBs (within 3 years)
     if (ageData.size > 0) {
       const datePattern = /\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4}|\d{2})\b/g;
