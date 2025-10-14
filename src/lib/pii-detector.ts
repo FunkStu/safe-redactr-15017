@@ -188,7 +188,9 @@ export class BrowserPIIDetector {
     const governmentPatterns = [
       { pattern: /\b(?:ABN:?\s*)?(\d{2}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{3})\b/g, label: 'ABN' },
       { pattern: /\b(?:TFN:?\s*)?(\d{3}[\s-]?\d{3}[\s-]?\d{3})\b/g, label: 'TFN' },
-      { pattern: /\b(?:Medicare:?\s*)?(\d{4}[\s-]?\d{5}[\s-]?\d{1})\b/g, label: 'Medicare Number' }
+      { pattern: /\b(?:Medicare:?\s*)?(\d{4}[\s-]?\d{5}[\s-]?\d{1})\b/g, label: 'Medicare Number' },
+      { pattern: /\b(?:AFSL|Australian Financial Services Licence)\s*:?\s*#?\s*(\d{6})\b/gi, label: 'AFSL Number' },
+      { pattern: /\b(?:AR|Authorised Representative)\s*:?\s*#?\s*(\d{6})\b/gi, label: 'AR Number' }
     ];
     
     // CONTACT INFORMATION
@@ -203,8 +205,8 @@ export class BrowserPIIDetector {
       { pattern: /\b(\d{3}[\s-]\d{3}[\s-]\d{4,10})\b/g, label: 'Bank Account' }
     ];
     
-    // ADDRESSES - Australian format
-    const addressPattern = /\b(\d{1,5}\s+[A-Za-z]+(?:\s+[A-Za-z]+)*\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Court|Ct|Place|Pl|Way|Crescent|Cres|Parade|Pde|Boulevard|Blvd|Terrace|Tce),?\s*[A-Za-z\s]+,?\s*(?:NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\s+\d{4})\b/gi;
+    // ADDRESSES - Australian format with improved boundary detection
+    const addressPattern = /\b(\d{1,5}\s+[A-Za-z]+(?:\s+[A-Za-z]+)*\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Court|Ct|Place|Pl|Way|Crescent|Cres|Parade|Pde|Boulevard|Blvd|Terrace|Tce))\b/gi;
     while ((match = addressPattern.exec(text)) !== null) {
       entities.push({
         text: match[1],
@@ -213,6 +215,59 @@ export class BrowserPIIDetector {
         end: match.index + match[1].length,
         score: 1.0
       });
+    }
+    
+    // BUSINESS NAMES - Common business entity suffixes
+    const businessPattern = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:Pty\.?\s*Ltd\.?|Limited|Pty|Ltd|Engineering|Consulting|Consultants|Solutions|Services|Group|Associates|Partners|Corporation|Corp|Company|Co\.?|Enterprises|Industries|Holdings)\b/g;
+    while ((match = businessPattern.exec(text)) !== null) {
+      const fullMatch = match[0];
+      entities.push({
+        text: fullMatch,
+        label: 'Business Name',
+        start: match.index,
+        end: match.index + fullMatch.length,
+        score: 0.85
+      });
+    }
+    
+    // SURNAMES - Detect likely surnames (capitalize words followed by common context)
+    const surnamePattern = /\b(Mr\.?|Mrs\.?|Ms\.?|Dr\.?|Miss)\s+([A-Z][a-z]{2,20})\b/g;
+    while ((match = surnamePattern.exec(text)) !== null) {
+      const surname = match[2];
+      const surnameStart = match.index + match[0].indexOf(surname);
+      entities.push({
+        text: surname,
+        label: 'Person Name',
+        start: surnameStart,
+        end: surnameStart + surname.length,
+        score: 0.9
+      });
+    }
+    
+    // FULL NAMES - First + Last pattern
+    const fullNamePattern = /\b([A-Z][a-z]{2,15})\s+([A-Z][a-z]{2,20})\b/g;
+    const excludeCommonPhrases = new Set([
+      'New South', 'South Wales', 'Super Fund', 'Life Insurance', 'Investment Portfolio',
+      'Account Balance', 'Tax File', 'Financial Services', 'Asset Allocation'
+    ]);
+    
+    while ((match = fullNamePattern.exec(text)) !== null) {
+      const fullName = match[0];
+      if (excludeCommonPhrases.has(fullName)) continue;
+      
+      // Check if AI already caught this
+      const alreadyDetected = entities.some(e => 
+        e.start <= match.index && e.end >= match.index + fullName.length
+      );
+      if (!alreadyDetected) {
+        entities.push({
+          text: fullName,
+          label: 'Person Name',
+          start: match.index,
+          end: match.index + fullName.length,
+          score: 0.85
+        });
+      }
     }
     
     // DATES OF BIRTH - Only dates with birth year range (1920-2024)
