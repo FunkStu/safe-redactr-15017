@@ -86,12 +86,82 @@ export class BrowserPIIDetector {
     return mapping[label.toUpperCase()] || label;
   }
 
-  // Structured data patterns for Australian financial PII
-  // AI will handle names, organizations, and contextual data
+  // Financial document patterns - designed for compliance
   detectAustralianPII(text: string): PIIEntity[] {
     const entities: PIIEntity[] = [];
+    let match;
     
-    // GOVERNMENT IDs (structured data AI often misses)
+    // PERSON NAMES - Multiple financial document patterns
+    
+    // Pattern 1: Formal salutations (Dear John Smith,)
+    const salutationPattern = /\b(?:Dear|Hello|Hi)\s+([A-Z][a-z]+(?:\s+(?:and|&)\s+[A-Z][a-z]+)?(?:\s+[A-Z][a-z]+)?)/g;
+    while ((match = salutationPattern.exec(text)) !== null) {
+      const name = match[1];
+      entities.push({
+        text: name,
+        label: 'Person Name',
+        start: match.index + match[0].indexOf(name),
+        end: match.index + match[0].indexOf(name) + name.length,
+        score: 1.0
+      });
+    }
+    
+    // Pattern 2: Client/Adviser labels (Client: John Smith, Clients: John Smith (44), Lara Smith (41))
+    const labeledNamePattern = /\b(?:Client|Clients|Adviser|Representative|Prepared for|Member|Partner|Applicant)s?:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?:\s*\(\d+\))?(?:\s*(?:,|and|&)\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?:\s*\(\d+\))?)?/gi;
+    while ((match = labeledNamePattern.exec(text)) !== null) {
+      // First name
+      if (match[1]) {
+        const name = match[1];
+        const start = match.index + match[0].indexOf(name);
+        entities.push({
+          text: name,
+          label: 'Person Name',
+          start,
+          end: start + name.length,
+          score: 1.0
+        });
+      }
+      // Second name (if exists, like "John Smith and Jane Doe")
+      if (match[2]) {
+        const name = match[2];
+        const start = match.index + match[0].indexOf(name);
+        entities.push({
+          text: name,
+          label: 'Person Name',
+          start,
+          end: start + name.length,
+          score: 1.0
+        });
+      }
+    }
+    
+    // Pattern 3: Names as line subjects (John: $100,000 p.a.)
+    const subjectNamePattern = /^([A-Z][a-z]+):\s*(?:\$|Business|Teacher|Secondary|Manager|Director|Owner)/gm;
+    while ((match = subjectNamePattern.exec(text)) !== null) {
+      const name = match[1];
+      entities.push({
+        text: name,
+        label: 'Person Name',
+        start: match.index,
+        end: match.index + name.length,
+        score: 0.95
+      });
+    }
+    
+    // Pattern 4: Full names with age (John Smith (44))
+    const nameAgePattern = /\b([A-Z][a-z]+\s+[A-Z][a-z]+)\s*\((\d{2})\)/g;
+    while ((match = nameAgePattern.exec(text)) !== null) {
+      const name = match[1];
+      entities.push({
+        text: name,
+        label: 'Person Name',
+        start: match.index,
+        end: match.index + name.length,
+        score: 1.0
+      });
+    }
+    
+    // GOVERNMENT IDs
     const governmentPatterns = [
       {
         pattern: /\b(?:ABN:?\s*)?(\d{2}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{3})\b/g,
@@ -107,7 +177,7 @@ export class BrowserPIIDetector {
       }
     ];
     
-    // CONTACT INFORMATION (structured formats)
+    // CONTACT INFORMATION
     const contactPatterns = [
       {
         pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
@@ -131,9 +201,8 @@ export class BrowserPIIDetector {
       }
     ];
     
-    // COMPLETE ADDRESSES (Australian format)
+    // ADDRESSES
     const addressPattern = /\b(\d{1,5}\s+[A-Za-z]+(?:\s+[A-Za-z]+)*\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Court|Ct|Place|Pl|Way|Crescent|Cres|Parade|Pde|Boulevard|Blvd|Terrace|Tce),?\s*[A-Za-z\s]+,?\s*(?:NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\s+\d{4})\b/gi;
-    let match;
     while ((match = addressPattern.exec(text)) !== null) {
       entities.push({
         text: match[1],
@@ -144,7 +213,7 @@ export class BrowserPIIDetector {
       });
     }
     
-    // DATES OF BIRTH (with context)
+    // DATES OF BIRTH
     const dobPattern = /(?:Date of Birth|DOB|Born):\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi;
     while ((match = dobPattern.exec(text)) !== null) {
       const dob = match[1];
