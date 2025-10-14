@@ -8,6 +8,8 @@ import { useToast } from '@/hooks/use-toast';
 import { BrowserPIIDetector, PIIEntity } from '@/lib/pii-detector';
 import { Download, Upload, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
 import { ComplianceDialog } from '@/components/ComplianceDialog';
+import { AccuracyDisclaimer } from '@/components/AccuracyDisclaimer';
+import { TermsOfUse } from '@/components/TermsOfUse';
 
 export function PIIDetector() {
   const [inputText, setInputText] = useState('');
@@ -430,15 +432,22 @@ export function PIIDetector() {
     <div className="container mx-auto p-6 max-w-7xl space-y-6">
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-6 w-6 text-primary" />
-            <CardTitle>AI Powered PII Redactr</CardTitle>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-6 w-6 text-primary" />
+                <CardTitle>AI Powered PII Redactr</CardTitle>
+              </div>
+              <CardDescription className="mt-1.5">
+                100% local processing - no data leaves your browser. Compliant with Australian financial regulations. <ComplianceDialog />
+              </CardDescription>
+            </div>
+            <TermsOfUse />
           </div>
-          <CardDescription>
-            100% local processing - no data leaves your browser. Compliant with Australian financial regulations. <ComplianceDialog />
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <AccuracyDisclaimer />
+          
           {!isInitializing && initProgress === 0 && (
             <div className="flex items-center gap-4 p-4 border rounded-lg bg-muted/50">
               <AlertCircle className="h-5 w-5 text-muted-foreground" />
