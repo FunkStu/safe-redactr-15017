@@ -87,6 +87,11 @@ export class BrowserPIIDetector {
     if (!this.classifier) {
       await this.initialize();
     }
+    
+    // Ensure name database is initialized before validation
+    if (!this.nameDatabase['isInitialized']) {
+      await this.nameDatabase.initialize();
+    }
 
     const result = await this.classifier(text, {
       aggregation_strategy: 'simple'
@@ -165,6 +170,8 @@ export class BrowserPIIDetector {
     const normalized = text.trim().replace(/[.,!?;:]/g, '');
     const words = normalized.split(/\s+/);
     
+    console.log('🔍 Validating:', text, '| Words:', words);
+    
     // CRITICAL: Blacklist common business/financial terms the AI incorrectly labels as names
     const businessBlacklist = new Set([
       'card', 'credit', 'debit', 'account', 'balance', 'fund', 'funds',
@@ -178,7 +185,10 @@ export class BrowserPIIDetector {
     ]);
     
     // If ANY word is a blacklisted business term, reject immediately
-    if (words.some(word => businessBlacklist.has(word.toLowerCase()))) {
+    const hasBlacklistedWord = words.some(word => businessBlacklist.has(word.toLowerCase()));
+    console.log('  Blacklist check:', hasBlacklistedWord, '| Checking:', words.map(w => w.toLowerCase()));
+    if (hasBlacklistedWord) {
+      console.log('  ❌ REJECTED: Contains blacklisted word');
       return false;
     }
     
