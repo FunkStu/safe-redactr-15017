@@ -1,4 +1,5 @@
 import { pipeline, env } from '@huggingface/transformers';
+import { NameDatabase } from './name-database';
 
 // Configure transformers to use browser cache
 env.allowLocalModels = false;
@@ -15,11 +16,23 @@ export interface PIIEntity {
 export class BrowserPIIDetector {
   private classifier: any = null;
   private isLoading = false;
+  private nameDatabase: NameDatabase;
+
+  constructor() {
+    this.nameDatabase = new NameDatabase();
+  }
 
   async initialize(onProgress?: (progress: number) => void) {
     if (this.classifier || this.isLoading) return;
     
     this.isLoading = true;
+    
+    // Initialize name database in parallel
+    const nameDbPromise = this.nameDatabase.initialize((progress) => {
+      // Name DB uses 0-30% of progress
+      if (onProgress) onProgress(progress * 0.3);
+    });
+    
     try {
       // Using a lightweight NER model optimized for PII detection
       this.classifier = await pipeline(
@@ -29,8 +42,8 @@ export class BrowserPIIDetector {
           device: 'webgpu',
           progress_callback: (progress: any) => {
             if (onProgress && progress.progress !== undefined) {
-              // Progress is already 0-100, just ensure it's capped
-              const normalizedProgress = Math.min(100, Math.max(0, progress.progress));
+              // AI model uses 30-100% of progress
+              const normalizedProgress = 30 + (Math.min(100, Math.max(0, progress.progress)) * 0.7);
               onProgress(normalizedProgress);
             }
           }
@@ -44,13 +57,17 @@ export class BrowserPIIDetector {
         {
           progress_callback: (progress: any) => {
             if (onProgress && progress.progress !== undefined) {
-              const normalizedProgress = Math.min(100, Math.max(0, progress.progress));
+              const normalizedProgress = 30 + (Math.min(100, Math.max(0, progress.progress)) * 0.7);
               onProgress(normalizedProgress);
             }
           }
         }
       );
     }
+    
+    // Wait for name database
+    await nameDbPromise;
+    
     this.isLoading = false;
   }
 
@@ -86,12 +103,12 @@ export class BrowserPIIDetector {
     return mapping[label.toUpperCase()] || label;
   }
 
-  // Financial document patterns - designed for compliance
+  // Financial document patterns + name database detection
   detectAustralianPII(text: string): PIIEntity[] {
     const entities: PIIEntity[] = [];
     let match;
     
-    // PERSON NAMES - Multiple financial document patterns
+    // PERSON NAMES - Pattern-based detection
     
     // Pattern 1: Formal salutations (Dear John Smith,)
     const salutationPattern = /\b(?:Dear|Hello|Hi)\s+([A-Z][a-z]+(?:\s+(?:and|&)\s+[A-Z][a-z]+)?(?:\s+[A-Z][a-z]+)?)/g;
@@ -106,10 +123,9 @@ export class BrowserPIIDetector {
       });
     }
     
-    // Pattern 2: Client/Adviser labels (Client: John Smith, Clients: John Smith (44), Lara Smith (41))
+    // Pattern 2: Client/Adviser labels
     const labeledNamePattern = /\b(?:Client|Clients|Adviser|Representative|Prepared for|Member|Partner|Applicant)s?:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?:\s*\(\d+\))?(?:\s*(?:,|and|&)\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?:\s*\(\d+\))?)?/gi;
     while ((match = labeledNamePattern.exec(text)) !== null) {
-      // First name
       if (match[1]) {
         const name = match[1];
         const start = match.index + match[0].indexOf(name);
@@ -121,7 +137,6 @@ export class BrowserPIIDetector {
           score: 1.0
         });
       }
-      // Second name (if exists, like "John Smith and Jane Doe")
       if (match[2]) {
         const name = match[2];
         const start = match.index + match[0].indexOf(name);
@@ -135,7 +150,7 @@ export class BrowserPIIDetector {
       }
     }
     
-    // Pattern 3: Names as line subjects (John: $100,000 p.a.)
+    // Pattern 3: Names as line subjects
     const subjectNamePattern = /^([A-Z][a-z]+):\s*(?:\$|Business|Teacher|Secondary|Manager|Director|Owner)/gm;
     while ((match = subjectNamePattern.exec(text)) !== null) {
       const name = match[1];
@@ -148,7 +163,7 @@ export class BrowserPIIDetector {
       });
     }
     
-    // Pattern 4: Full names with age (John Smith (44))
+    // Pattern 4: Full names with age
     const nameAgePattern = /\b([A-Z][a-z]+\s+[A-Z][a-z]+)\s*\((\d{2})\)/g;
     while ((match = nameAgePattern.exec(text)) !== null) {
       const name = match[1];
@@ -161,44 +176,58 @@ export class BrowserPIIDetector {
       });
     }
     
+    // NAME DATABASE DETECTION - Enhanced contextual detection
+    // Find all capitalized word pairs (potential names)
+    const capitalizedPairPattern = /\b([A-Z][a-z]{1,15})\s+([A-Z][a-z]{1,15})\b/g;
+    while ((match = capitalizedPairPattern.exec(text)) !== null) {
+      const firstName = match[1];
+      const lastName = match[2];
+      const fullName = `${firstName} ${lastName}`;
+      
+      // Skip if already detected by patterns
+      const alreadyDetected = entities.some(e => 
+        e.start <= match.index && e.end >= match.index + fullName.length
+      );
+      if (alreadyDetected) continue;
+      
+      // Check against name database
+      if (this.nameDatabase.isFullName(firstName, lastName)) {
+        // Additional context validation
+        const beforeText = text.substring(Math.max(0, match.index - 50), match.index);
+        const afterText = text.substring(match.index + fullName.length, Math.min(text.length, match.index + fullName.length + 50));
+        const context = beforeText + afterText;
+        
+        // Exclude if it looks like a company/location (common false positives)
+        const excludePatterns = /\b(Pty Ltd|Limited|Company|Corporation|Street|Road|Avenue|City|State|Country)\b/i;
+        if (excludePatterns.test(context)) continue;
+        
+        entities.push({
+          text: fullName,
+          label: 'Person Name',
+          start: match.index,
+          end: match.index + fullName.length,
+          score: 0.90
+        });
+      }
+    }
+    
     // GOVERNMENT IDs
     const governmentPatterns = [
-      {
-        pattern: /\b(?:ABN:?\s*)?(\d{2}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{3})\b/g,
-        label: 'ABN'
-      },
-      {
-        pattern: /\b(?:TFN:?\s*)?(\d{3}[\s-]?\d{3}[\s-]?\d{3})\b/g,
-        label: 'TFN'
-      },
-      {
-        pattern: /\b(?:Medicare:?\s*)?(\d{4}[\s-]?\d{5}[\s-]?\d{1})\b/g,
-        label: 'Medicare Number'
-      }
+      { pattern: /\b(?:ABN:?\s*)?(\d{2}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{3})\b/g, label: 'ABN' },
+      { pattern: /\b(?:TFN:?\s*)?(\d{3}[\s-]?\d{3}[\s-]?\d{3})\b/g, label: 'TFN' },
+      { pattern: /\b(?:Medicare:?\s*)?(\d{4}[\s-]?\d{5}[\s-]?\d{1})\b/g, label: 'Medicare Number' }
     ];
     
     // CONTACT INFORMATION
     const contactPatterns = [
-      {
-        pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
-        label: 'Email'
-      },
-      {
-        pattern: /\b(?:\+61[\s-]?)?0[2-9](?:[\s-]?\d){8}\b/g,
-        label: 'Phone Number'
-      }
+      { pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, label: 'Email' },
+      { pattern: /\b(?:\+61[\s-]?)?0[2-9](?:[\s-]?\d){8}\b/g, label: 'Phone Number' }
     ];
     
-    // FINANCIAL ACCOUNT NUMBERS
+    // FINANCIAL ACCOUNTS
     const accountPatterns = [
-      {
-        pattern: /\b(?:\d{4}[\s-]?){3}\d{4}\b/g,
-        label: 'Credit Card'
-      },
-      {
-        pattern: /\b(\d{3}[\s-]\d{3}[\s-]\d{4,10})\b/g,
-        label: 'Bank Account'
-      }
+      { pattern: /\b(?:\d{4}[\s-]?){3}\d{4}\b/g, label: 'Credit Card' },
+      { pattern: /\b(\d{3}[\s-]\d{3}[\s-]\d{4,10})\b/g, label: 'Bank Account' }
     ];
     
     // ADDRESSES
