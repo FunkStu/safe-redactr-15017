@@ -11,6 +11,11 @@ export interface PIIEntity {
   start: number;
   end: number;
   score: number;
+  metadata?: {
+    calculatedDOB?: string;
+    documentDate?: string;
+    age?: number;
+  };
 }
 
 export class BrowserPIIDetector {
@@ -103,10 +108,17 @@ export class BrowserPIIDetector {
     return mapping[label.toUpperCase()] || label;
   }
 
-  // Financial document patterns + name database detection
+  // Financial document patterns + name database detection + age/DOB calculation
   detectAustralianPII(text: string): PIIEntity[] {
     const entities: PIIEntity[] = [];
     let match;
+    
+    // STEP 1: Extract document date for age calculations
+    const documentDate = this.extractDocumentDate(text);
+    console.log('Document date detected:', documentDate);
+    
+    // STEP 2: Detect ages and calculate potential DOBs
+    const ageData: Map<string, { age: number; calculatedDOB: Date }> = new Map();
     
     // PERSON NAMES - Pattern-based detection
     
@@ -123,30 +135,57 @@ export class BrowserPIIDetector {
       });
     }
     
-    // Pattern 2: Client/Adviser labels
-    const labeledNamePattern = /\b(?:Client|Clients|Adviser|Representative|Prepared for|Member|Partner|Applicant)s?:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?:\s*\(\d+\))?(?:\s*(?:,|and|&)\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?:\s*\(\d+\))?)?/gi;
+    // Pattern 2: Client/Adviser labels (with age extraction)
+    const labeledNamePattern = /\b(?:Client|Clients|Adviser|Representative|Prepared for|Member|Partner|Applicant)s?:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?:\s*\((\d+)\))?(?:\s*(?:,|and|&)\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?:\s*\((\d+)\))?)?/gi;
     while ((match = labeledNamePattern.exec(text)) !== null) {
+      // First person
       if (match[1]) {
         const name = match[1];
+        const age = match[2] ? parseInt(match[2]) : null;
         const start = match.index + match[0].indexOf(name);
+        
         entities.push({
           text: name,
           label: 'Person Name',
           start,
           end: start + name.length,
-          score: 1.0
+          score: 1.0,
+          metadata: age && documentDate ? {
+            age,
+            documentDate: documentDate.toISOString().split('T')[0],
+            calculatedDOB: this.calculateDOBFromAge(age, documentDate).toISOString().split('T')[0]
+          } : undefined
         });
+        
+        if (age && documentDate) {
+          const calculatedDOB = this.calculateDOBFromAge(age, documentDate);
+          ageData.set(name, { age, calculatedDOB });
+        }
       }
-      if (match[2]) {
-        const name = match[2];
+      
+      // Second person
+      if (match[3]) {
+        const name = match[3];
+        const age = match[4] ? parseInt(match[4]) : null;
         const start = match.index + match[0].indexOf(name);
+        
         entities.push({
           text: name,
           label: 'Person Name',
           start,
           end: start + name.length,
-          score: 1.0
+          score: 1.0,
+          metadata: age && documentDate ? {
+            age,
+            documentDate: documentDate.toISOString().split('T')[0],
+            calculatedDOB: this.calculateDOBFromAge(age, documentDate).toISOString().split('T')[0]
+          } : undefined
         });
+        
+        if (age && documentDate) {
+          const calculatedDOB = this.calculateDOBFromAge(age, documentDate);
+          ageData.set(name, { age, calculatedDOB });
+        }
       }
     }
     
@@ -163,41 +202,62 @@ export class BrowserPIIDetector {
       });
     }
     
-    // Pattern 4: Full names with age
+    // Pattern 4: Full names with age (enhanced with DOB calculation)
     const nameAgePattern = /\b([A-Z][a-z]+\s+[A-Z][a-z]+)\s*\((\d{2})\)/g;
     while ((match = nameAgePattern.exec(text)) !== null) {
       const name = match[1];
+      const age = parseInt(match[2]);
+      
       entities.push({
         text: name,
         label: 'Person Name',
         start: match.index,
         end: match.index + name.length,
-        score: 1.0
+        score: 1.0,
+        metadata: documentDate ? {
+          age,
+          documentDate: documentDate.toISOString().split('T')[0],
+          calculatedDOB: this.calculateDOBFromAge(age, documentDate).toISOString().split('T')[0]
+        } : { age }
+      });
+      
+      if (documentDate) {
+        const calculatedDOB = this.calculateDOBFromAge(age, documentDate);
+        ageData.set(name, { age, calculatedDOB });
+      }
+      
+      // Also flag the age itself
+      const ageStart = match.index + match[0].indexOf(match[2]);
+      entities.push({
+        text: match[2],
+        label: 'Age',
+        start: ageStart,
+        end: ageStart + match[2].length,
+        score: 1.0,
+        metadata: documentDate ? {
+          age,
+          calculatedDOB: this.calculateDOBFromAge(age, documentDate).toISOString().split('T')[0]
+        } : { age }
       });
     }
     
-    // NAME DATABASE DETECTION - Enhanced contextual detection
-    // Find all capitalized word pairs (potential names)
+    // NAME DATABASE DETECTION
     const capitalizedPairPattern = /\b([A-Z][a-z]{1,15})\s+([A-Z][a-z]{1,15})\b/g;
     while ((match = capitalizedPairPattern.exec(text)) !== null) {
       const firstName = match[1];
       const lastName = match[2];
       const fullName = `${firstName} ${lastName}`;
       
-      // Skip if already detected by patterns
       const alreadyDetected = entities.some(e => 
         e.start <= match.index && e.end >= match.index + fullName.length
       );
       if (alreadyDetected) continue;
       
-      // Check against name database
       if (this.nameDatabase.isFullName(firstName, lastName)) {
-        // Additional context validation
         const beforeText = text.substring(Math.max(0, match.index - 50), match.index);
         const afterText = text.substring(match.index + fullName.length, Math.min(text.length, match.index + fullName.length + 50));
         const context = beforeText + afterText;
         
-        // Exclude if it looks like a company/location (common false positives)
         const excludePatterns = /\b(Pty Ltd|Limited|Company|Corporation|Street|Road|Avenue|City|State|Country)\b/i;
         if (excludePatterns.test(context)) continue;
         
@@ -208,6 +268,61 @@ export class BrowserPIIDetector {
           end: match.index + fullName.length,
           score: 0.90
         });
+      }
+    }
+    
+    // DATES OF BIRTH - Enhanced with calculated DOB matching
+    const dobPattern = /(?:Date of Birth|DOB|Born):\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi;
+    while ((match = dobPattern.exec(text)) !== null) {
+      const dob = match[1];
+      const start = match.index + match[0].indexOf(dob);
+      entities.push({
+        text: dob,
+        label: 'Date of Birth',
+        start,
+        end: start + dob.length,
+        score: 1.0
+      });
+    }
+    
+    // DETECT DATES MATCHING CALCULATED DOBs (within 3 years)
+    if (ageData.size > 0) {
+      const datePattern = /\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4}|\d{2})\b/g;
+      while ((match = datePattern.exec(text)) !== null) {
+        const dateStr = match[0];
+        const day = parseInt(match[1]);
+        const month = parseInt(match[2]);
+        let year = parseInt(match[3]);
+        
+        // Convert 2-digit year to 4-digit
+        if (year < 100) {
+          year += year > 30 ? 1900 : 2000;
+        }
+        
+        const detectedDate = new Date(year, month - 1, day);
+        
+        // Check if already marked as DOB
+        const alreadyDOB = entities.some(e => 
+          e.label === 'Date of Birth' && e.start === match.index
+        );
+        if (alreadyDOB) continue;
+        
+        // Check against all calculated DOBs
+        for (const [name, { calculatedDOB }] of ageData.entries()) {
+          if (this.isDateWithinRange(detectedDate, calculatedDOB, 3)) {
+            entities.push({
+              text: dateStr,
+              label: 'Date of Birth',
+              start: match.index,
+              end: match.index + dateStr.length,
+              score: 0.95,
+              metadata: {
+                calculatedDOB: calculatedDOB.toISOString().split('T')[0]
+              }
+            });
+            break;
+          }
+        }
       }
     }
     
@@ -242,20 +357,6 @@ export class BrowserPIIDetector {
       });
     }
     
-    // DATES OF BIRTH
-    const dobPattern = /(?:Date of Birth|DOB|Born):\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi;
-    while ((match = dobPattern.exec(text)) !== null) {
-      const dob = match[1];
-      const start = match.index + match[0].indexOf(dob);
-      entities.push({
-        text: dob,
-        label: 'Date of Birth',
-        start,
-        end: start + dob.length,
-        score: 1.0
-      });
-    }
-    
     // Execute all structured patterns
     [...governmentPatterns, ...contactPatterns, ...accountPatterns].forEach(({ pattern, label }) => {
       let match;
@@ -275,6 +376,63 @@ export class BrowserPIIDetector {
     });
 
     return entities;
+  }
+
+  private extractDocumentDate(text: string): Date | null {
+    // Try various document date patterns
+    const patterns = [
+      /(?:Date|Meeting Date|Document Date|As at|As of):\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/i,
+      /(?:Dated|Prepared on):\s*(\d{1,2})\s+(\w+)\s+(\d{4})/i,
+      /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/
+    ];
+    
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        let day: number, month: number, year: number;
+        
+        if (match[2].match(/[a-z]/i)) {
+          // Month name format
+          const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+          month = monthNames.findIndex(m => match[2].toLowerCase().startsWith(m)) + 1;
+          day = parseInt(match[1]);
+          year = parseInt(match[3]);
+        } else {
+          // Numeric format
+          day = parseInt(match[1]);
+          month = parseInt(match[2]);
+          year = parseInt(match[3]);
+        }
+        
+        if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+          return new Date(year, month - 1, day);
+        }
+      }
+    }
+    
+    // Default to today if no date found
+    return new Date();
+  }
+
+  private calculateDOBFromAge(age: number, documentDate: Date): Date {
+    const birthYear = documentDate.getFullYear() - age;
+    // Return mid-year estimate (June 30)
+    return new Date(birthYear, 5, 30);
+  }
+
+  private isDateWithinRange(date: Date, targetDate: Date, yearsRange: number): boolean {
+    const yearsDiff = Math.abs(date.getFullYear() - targetDate.getFullYear());
+    
+    if (yearsDiff > yearsRange) return false;
+    if (yearsDiff < yearsRange) return true;
+    
+    // Check if within the year boundary
+    const monthsDiff = Math.abs(
+      (date.getFullYear() * 12 + date.getMonth()) - 
+      (targetDate.getFullYear() * 12 + targetDate.getMonth())
+    );
+    
+    return monthsDiff <= yearsRange * 12;
   }
 
   async detectAll(text: string): Promise<PIIEntity[]> {
