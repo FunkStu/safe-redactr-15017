@@ -31,6 +31,10 @@ export function ComplianceDialog() {
       function: "Zero data transmission to external parties. All PII remains in user's browser memory only. No APIs, databases, or third-party services receive data."
     },
     {
+      requirement: "APP 8 - Cross-border disclosure",
+      function: "Perfect compliance - zero cross-border data flows. No overseas transfers, cloud storage, or international API calls. Data never leaves user's device, eliminating all transborder data flow obligations and foreign jurisdiction risks."
+    },
+    {
       requirement: "APP 11 - Security of personal information",
       function: "Maximum security through local-only processing. Data never leaves device, eliminating network transmission risks. WebGPU/CPU processing ensures data stays in browser sandbox."
     },
