@@ -78,10 +78,10 @@ export function PIIDetector() {
         duration: 3000,
       });
     } catch (error) {
-      console.error('Detection error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to detect PII';
       toast({
         title: 'Detection Failed',
-        description: 'Failed to detect PII. Please try again.',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
@@ -230,31 +230,92 @@ export function PIIDetector() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // File size validation (10MB max)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      toast({
+        title: 'File Too Large',
+        description: 'Maximum file size is 10MB',
+        variant: 'destructive',
+      });
+      e.target.value = '';
+      return;
+    }
+
+    // File type validation
+    if (!file.name.endsWith('.json')) {
+      toast({
+        title: 'Invalid File Type',
+        description: 'Please upload a JSON file',
+        variant: 'destructive',
+      });
+      e.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const data = JSON.parse(event.target?.result as string);
+        const content = event.target?.result as string;
         
-        if (!data.mapping) {
-          throw new Error('Invalid mapping file format');
+        // Additional size validation
+        if (content.length > MAX_FILE_SIZE) {
+          throw new Error('Content exceeds size limit');
+        }
+        
+        const data = JSON.parse(content);
+        
+        if (!data.mapping || typeof data.mapping !== 'object') {
+          throw new Error('Invalid mapping format');
         }
 
-        const newMap = new Map<string, string>(Object.entries(data.mapping));
-        setRedactionMap(newMap);
-        
+        // Sanitize and validate each entry
+        const validatedMap = new Map<string, string>();
+        let invalidCount = 0;
+
+        Object.entries(data.mapping).forEach(([key, value]) => {
+          if (typeof key === 'string' && typeof value === 'string') {
+            // Limit length and trim
+            const sanitizedKey = key.substring(0, 500).trim();
+            const sanitizedValue = value.substring(0, 1000).trim();
+            
+            if (sanitizedKey && sanitizedValue) {
+              validatedMap.set(sanitizedKey, sanitizedValue);
+            } else {
+              invalidCount++;
+            }
+          } else {
+            invalidCount++;
+          }
+        });
+
+        if (validatedMap.size === 0) {
+          throw new Error('No valid mappings found');
+        }
+
+        setRedactionMap(validatedMap);
         toast({
           title: 'Mapping Imported',
-          description: `Loaded ${newMap.size} redaction mappings`,
+          description: `Loaded ${validatedMap.size} mappings${invalidCount > 0 ? ` (${invalidCount} invalid skipped)` : ''}`,
           duration: 3000,
         });
       } catch (error) {
         toast({
           title: 'Import Failed',
-          description: 'Invalid mapping file format',
+          description: error instanceof Error ? error.message : 'Invalid file format',
           variant: 'destructive',
         });
       }
     };
+    
+    reader.onerror = () => {
+      toast({
+        title: 'Read Failed',
+        description: 'Failed to read file',
+        variant: 'destructive',
+      });
+    };
+    
     reader.readAsText(file);
     e.target.value = '';
   };
@@ -263,11 +324,76 @@ export function PIIDetector() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // File size validation (10MB max)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      toast({
+        title: 'File Too Large',
+        description: 'Maximum file size is 10MB',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // File type validation (check MIME type if available)
+    if (file.type && !file.type.startsWith('text/')) {
+      toast({
+        title: 'Invalid File Type',
+        description: 'Please upload a text file',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
-      const text = event.target?.result as string;
-      setInputText(text);
+      try {
+        const content = event.target?.result as string;
+        
+        // Validate content size
+        if (content.length > MAX_FILE_SIZE) {
+          toast({
+            title: 'Content Too Large',
+            description: 'File content exceeds 10MB limit',
+            variant: 'destructive',
+          });
+          return;
+        }
+        
+        // Basic content validation (detect binary data)
+        const nonPrintableCount = (content.match(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g) || []).length;
+        if (nonPrintableCount > content.length * 0.1) {
+          toast({
+            title: 'Invalid Content',
+            description: 'File appears to contain binary data',
+            variant: 'destructive',
+          });
+          return;
+        }
+        
+        setInputText(content);
+        toast({
+          title: 'File Loaded',
+          description: `Loaded ${content.length} characters`,
+          duration: 2000,
+        });
+      } catch (error) {
+        toast({
+          title: 'Load Failed',
+          description: 'Failed to process file',
+          variant: 'destructive',
+        });
+      }
     };
+    
+    reader.onerror = () => {
+      toast({
+        title: 'Read Failed',
+        description: 'Failed to read file',
+        variant: 'destructive',
+      });
+    };
+    
     reader.readAsText(file);
   };
 

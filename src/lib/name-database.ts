@@ -6,6 +6,8 @@ export class NameDatabase {
   private lastNames: Set<string> = new Set();
   private isInitialized = false;
   private initPromise: Promise<void> | null = null;
+  private readonly cacheKey = 'pii_name_database_v2';
+  private readonly cacheVersion = '2.0';
 
   async initialize(onProgress?: (progress: number) => void): Promise<void> {
     if (this.isInitialized) return;
@@ -17,17 +19,11 @@ export class NameDatabase {
 
   private async _initialize(onProgress?: (progress: number) => void): Promise<void> {
     try {
-      // Check cache first
-      const cachedData = this.loadFromCache();
-      if (cachedData) {
-        this.firstNames = new Set(cachedData.firstNames);
-        this.lastNames = new Set(cachedData.lastNames);
+      // Check cache first with integrity validation
+      const cacheLoaded = await this.loadFromCache();
+      if (cacheLoaded) {
         this.isInitialized = true;
         onProgress?.(100);
-        console.log('Name database loaded from cache:', {
-          firstNames: this.firstNames.size,
-          lastNames: this.lastNames.size
-        });
         return;
       }
 
@@ -39,18 +35,12 @@ export class NameDatabase {
         this.loadLastNames(onProgress)
       ]);
 
-      // Save to cache
-      this.saveToCache();
+      // Save to cache with integrity protection
+      await this.saveToCache();
       this.isInitialized = true;
       onProgress?.(100);
-
-      console.log('Name database initialized:', {
-        firstNames: this.firstNames.size,
-        lastNames: this.lastNames.size
-      });
     } catch (error) {
-      console.error('Failed to initialize name database:', error);
-      // Fall back to minimal set
+      // Silent fallback to minimal set
       this.loadFallbackNames();
       this.isInitialized = true;
       onProgress?.(100);
@@ -59,8 +49,6 @@ export class NameDatabase {
 
   private async loadFirstNames(onProgress?: (progress: number) => void): Promise<void> {
     try {
-      // Using Australian top baby names + common international names
-      // This is public census data, not client PII
       const response = await fetch('https://raw.githubusercontent.com/smashew/NameDatabases/master/NamesDatabases/first%20names/us.txt');
       const text = await response.text();
       
@@ -71,13 +59,12 @@ export class NameDatabase {
       names.forEach(name => this.firstNames.add(name));
       onProgress?.(50);
     } catch (error) {
-      console.error('Failed to load first names:', error);
+      // Silent failure - will use fallback
     }
   }
 
   private async loadLastNames(onProgress?: (progress: number) => void): Promise<void> {
     try {
-      // Using common surnames database
       const response = await fetch('https://raw.githubusercontent.com/smashew/NameDatabases/master/NamesDatabases/surnames/us.txt');
       const text = await response.text();
       
@@ -88,7 +75,7 @@ export class NameDatabase {
       names.forEach(name => this.lastNames.add(name));
       onProgress?.(90);
     } catch (error) {
-      console.error('Failed to load last names:', error);
+      // Silent failure - will use fallback
     }
   }
 
@@ -113,39 +100,97 @@ export class NameDatabase {
     commonLast.forEach(name => this.lastNames.add(name));
   }
 
-  private loadFromCache(): { firstNames: string[]; lastNames: string[] } | null {
+  private async loadFromCache(): Promise<boolean> {
     try {
-      const cached = localStorage.getItem('pii_name_database');
-      if (!cached) return null;
+      const cached = localStorage.getItem(this.cacheKey);
+      if (!cached) return false;
 
       const data = JSON.parse(cached);
-      const cacheDate = new Date(data.timestamp);
-      const daysSinceCache = (Date.now() - cacheDate.getTime()) / (1000 * 60 * 60 * 24);
-
-      // Refresh if older than 30 days
-      if (daysSinceCache > 30) {
-        console.log('Name database cache expired');
-        return null;
+      
+      // Version validation
+      if (data.version !== this.cacheVersion) {
+        this.clearCache();
+        return false;
       }
 
-      return data;
+      // Structure validation
+      if (!Array.isArray(data.firstNames) || !Array.isArray(data.lastNames)) {
+        this.clearCache();
+        return false;
+      }
+
+      // Size validation (prevent cache poisoning)
+      const MAX_CACHE_SIZE = 50000;
+      if (data.firstNames.length > MAX_CACHE_SIZE || data.lastNames.length > MAX_CACHE_SIZE) {
+        this.clearCache();
+        return false;
+      }
+
+      // Integrity check using checksum
+      if (data.checksum) {
+        const namesData = JSON.stringify({
+          firstNames: data.firstNames,
+          lastNames: data.lastNames
+        });
+        const calculatedChecksum = await this.calculateChecksum(namesData);
+        
+        if (calculatedChecksum !== data.checksum) {
+          // Cache integrity compromised
+          this.clearCache();
+          return false;
+        }
+      }
+
+      // Cache age validation (30 days)
+      if (data.timestamp) {
+        const cacheDate = new Date(data.timestamp);
+        const daysSinceCache = (Date.now() - cacheDate.getTime()) / (1000 * 60 * 60 * 24);
+        
+        if (daysSinceCache > 30) {
+          return false;
+        }
+      }
+
+      this.firstNames = new Set(data.firstNames);
+      this.lastNames = new Set(data.lastNames);
+      return true;
     } catch (error) {
-      console.error('Failed to load cache:', error);
-      return null;
+      // Cache corrupted
+      this.clearCache();
+      return false;
     }
   }
 
-  private saveToCache(): void {
+  private async saveToCache(): Promise<void> {
     try {
-      const data = {
+      const namesData = {
         firstNames: Array.from(this.firstNames),
-        lastNames: Array.from(this.lastNames),
+        lastNames: Array.from(this.lastNames)
+      };
+      
+      // Calculate integrity checksum
+      const checksum = await this.calculateChecksum(JSON.stringify(namesData));
+      
+      const data = {
+        version: this.cacheVersion,
+        ...namesData,
+        checksum,
         timestamp: new Date().toISOString()
       };
-      localStorage.setItem('pii_name_database', JSON.stringify(data));
+      
+      localStorage.setItem(this.cacheKey, JSON.stringify(data));
     } catch (error) {
-      console.error('Failed to save cache:', error);
+      // localStorage full or disabled - silent failure acceptable
     }
+  }
+
+  private async calculateChecksum(data: string): Promise<string> {
+    // Use Web Crypto API for integrity verification
+    const encoder = new TextEncoder();
+    const dataBuffer = encoder.encode(data);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
   isFirstName(word: string): boolean {
@@ -186,7 +231,8 @@ export class NameDatabase {
   }
 
   clearCache(): void {
-    localStorage.removeItem('pii_name_database');
+    localStorage.removeItem(this.cacheKey);
+    localStorage.removeItem('pii_name_database'); // Remove old cache key
     this.firstNames.clear();
     this.lastNames.clear();
     this.isInitialized = false;

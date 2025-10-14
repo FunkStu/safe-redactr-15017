@@ -22,6 +22,7 @@ export class BrowserPIIDetector {
   private classifier: any = null;
   private isLoading = false;
   private nameDatabase: NameDatabase;
+  private readonly modelVersion = 'Xenova/bert-base-NER@4a9c4d5'; // Pin specific commit for integrity
 
   constructor() {
     this.nameDatabase = new NameDatabase();
@@ -32,22 +33,20 @@ export class BrowserPIIDetector {
     
     this.isLoading = true;
     
-    // Initialize name database in parallel
+    // Initialize name database in parallel (silent operation)
     const nameDbPromise = this.nameDatabase.initialize((progress) => {
-      // Name DB uses 0-30% of progress
       if (onProgress) onProgress(progress * 0.3);
     });
     
     try {
-      // Using a lightweight NER model optimized for PII detection
+      // Try WebGPU first for acceleration
       this.classifier = await pipeline(
         'token-classification',
-        'Xenova/bert-base-NER',
+        this.modelVersion,
         {
           device: 'webgpu',
           progress_callback: (progress: any) => {
             if (onProgress && progress.progress !== undefined) {
-              // AI model uses 30-100% of progress
               const normalizedProgress = 30 + (Math.min(100, Math.max(0, progress.progress)) * 0.7);
               onProgress(normalizedProgress);
             }
@@ -55,10 +54,10 @@ export class BrowserPIIDetector {
         }
       );
     } catch (error) {
-      console.warn('WebGPU not available, falling back to CPU');
+      // Silent fallback to CPU
       this.classifier = await pipeline(
         'token-classification',
-        'Xenova/bert-base-NER',
+        this.modelVersion,
         {
           progress_callback: (progress: any) => {
             if (onProgress && progress.progress !== undefined) {
@@ -70,9 +69,7 @@ export class BrowserPIIDetector {
       );
     }
     
-    // Wait for name database
     await nameDbPromise;
-    
     this.isLoading = false;
   }
 
@@ -158,6 +155,12 @@ export class BrowserPIIDetector {
 
 
   async detectAll(text: string): Promise<PIIEntity[]> {
+    // Input validation to prevent ReDoS attacks
+    const MAX_INPUT_LENGTH = 100000; // 100KB limit
+    if (text.length > MAX_INPUT_LENGTH) {
+      throw new Error(`Input exceeds maximum length of ${MAX_INPUT_LENGTH} characters`);
+    }
+
     // PRIMARY: AI Model - Best for unstructured data and context understanding
     const aiEntities = await this.detectPII(text);
     
@@ -205,8 +208,8 @@ export class BrowserPIIDetector {
       { pattern: /\b(\d{3}[\s-]\d{3}[\s-]\d{4,10})\b/g, label: 'Bank Account' }
     ];
     
-    // ADDRESSES - Australian format with improved boundary detection
-    const addressPattern = /\b(\d{1,5}\s+[A-Za-z]+(?:\s+[A-Za-z]+)*\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Court|Ct|Place|Pl|Way|Crescent|Cres|Parade|Pde|Boulevard|Blvd|Terrace|Tce))\b/gi;
+    // ADDRESSES - Australian format with limited repetitions to prevent ReDoS
+    const addressPattern = /\b(\d{1,5}\s+[A-Za-z]+(?:\s+[A-Za-z]+){0,5}\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Court|Ct|Place|Pl|Way|Crescent|Cres|Parade|Pde|Boulevard|Blvd|Terrace|Tce))\b/gi;
     while ((match = addressPattern.exec(text)) !== null) {
       entities.push({
         text: match[1],
@@ -217,8 +220,8 @@ export class BrowserPIIDetector {
       });
     }
     
-    // BUSINESS NAMES - Common business entity suffixes
-    const businessPattern = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:Pty\.?\s*Ltd\.?|Limited|Pty|Ltd|Engineering|Consulting|Consultants|Solutions|Services|Group|Associates|Partners|Corporation|Corp|Company|Co\.?|Enterprises|Industries|Holdings)\b/g;
+    // BUSINESS NAMES - Common business entity suffixes with limited repetitions
+    const businessPattern = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,4})\s+(?:Pty\.?\s*Ltd\.?|Limited|Pty|Ltd|Engineering|Consulting|Consultants|Solutions|Services|Group|Associates|Partners|Corporation|Corp|Company|Co\.?|Enterprises|Industries|Holdings)\b/g;
     while ((match = businessPattern.exec(text)) !== null) {
       const fullMatch = match[0];
       entities.push({
