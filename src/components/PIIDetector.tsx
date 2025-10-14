@@ -35,6 +35,7 @@ export function PIIDetector() {
     if (!detectorRef.current) return;
     
     setIsInitializing(true);
+    setInitProgress(0);
     try {
       await detectorRef.current.initialize((progress) => {
         setInitProgress(Math.round(progress));
@@ -45,10 +46,13 @@ export function PIIDetector() {
         duration: 3000,
       });
     } catch (error) {
+      console.error('Initialization error:', error);
+      setInitProgress(0);
       toast({
         title: 'Initialization Failed',
-        description: 'Failed to load AI model. Please refresh and try again.',
+        description: error instanceof Error ? error.message : 'Failed to load AI model. Check console for details.',
         variant: 'destructive',
+        duration: 5000,
       });
     } finally {
       setIsInitializing(false);

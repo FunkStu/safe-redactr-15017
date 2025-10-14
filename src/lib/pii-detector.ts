@@ -40,6 +40,7 @@ export class BrowserPIIDetector {
     
     try {
       // Try WebGPU first for acceleration
+      console.log('Attempting to load AI model with WebGPU...');
       this.classifier = await pipeline(
         'token-classification',
         this.modelVersion,
@@ -53,20 +54,29 @@ export class BrowserPIIDetector {
           }
         }
       );
-    } catch (error) {
-      // Silent fallback to CPU
-      this.classifier = await pipeline(
-        'token-classification',
-        this.modelVersion,
-        {
-          progress_callback: (progress: any) => {
-            if (onProgress && progress.progress !== undefined) {
-              const normalizedProgress = 30 + (Math.min(100, Math.max(0, progress.progress)) * 0.7);
-              onProgress(normalizedProgress);
+      console.log('Successfully loaded AI model with WebGPU');
+    } catch (webgpuError) {
+      // Fallback to CPU
+      console.warn('WebGPU failed, falling back to CPU:', webgpuError);
+      try {
+        this.classifier = await pipeline(
+          'token-classification',
+          this.modelVersion,
+          {
+            progress_callback: (progress: any) => {
+              if (onProgress && progress.progress !== undefined) {
+                const normalizedProgress = 30 + (Math.min(100, Math.max(0, progress.progress)) * 0.7);
+                onProgress(normalizedProgress);
+              }
             }
           }
-        }
-      );
+        );
+        console.log('Successfully loaded AI model with CPU');
+      } catch (cpuError) {
+        this.isLoading = false;
+        console.error('Failed to load AI model:', cpuError);
+        throw new Error(`Model initialization failed: ${cpuError instanceof Error ? cpuError.message : 'Unknown error'}`);
+      }
     }
     
     await nameDbPromise;
