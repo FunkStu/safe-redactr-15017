@@ -17,7 +17,11 @@ export function PIIDetector() {
   const [redactedText, setRedactedText] = useState('');
   const [selectedEntities, setSelectedEntities] = useState<Set<number>>(new Set());
   const [redactionMap, setRedactionMap] = useState<Map<string, string>>(new Map());
+  const [selectedText, setSelectedText] = useState('');
+  const [selectionStart, setSelectionStart] = useState(0);
+  const [selectionEnd, setSelectionEnd] = useState(0);
   const detectorRef = useRef<BrowserPIIDetector | null>(null);
+  const redactedTextareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -127,6 +131,55 @@ export function PIIDetector() {
     toast({
       title: 'Unredaction Complete',
       description: `Restored ${redactionMap.size} items`,
+      duration: 3000,
+    });
+  };
+
+  const handleTextSelection = () => {
+    const textarea = redactedTextareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = redactedText.substring(start, end);
+
+    if (text.length > 0) {
+      setSelectedText(text);
+      setSelectionStart(start);
+      setSelectionEnd(end);
+    }
+  };
+
+  const handleManualRedact = () => {
+    if (!selectedText || selectionStart === selectionEnd) {
+      toast({
+        title: 'No Text Selected',
+        description: 'Please select text in the redacted area to manually redact',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const manualIndex = redactionMap.size + 1;
+    const placeholder = `[REDACTED_MANUAL_${String(manualIndex).padStart(3, '0')}]`;
+    
+    const newRedactionMap = new Map(redactionMap);
+    newRedactionMap.set(placeholder, selectedText);
+    
+    const newRedactedText = 
+      redactedText.substring(0, selectionStart) + 
+      placeholder + 
+      redactedText.substring(selectionEnd);
+    
+    setRedactionMap(newRedactionMap);
+    setRedactedText(newRedactedText);
+    setSelectedText('');
+    setSelectionStart(0);
+    setSelectionEnd(0);
+    
+    toast({
+      title: 'Manual Redaction Added',
+      description: `"${selectedText}" has been redacted`,
       duration: 3000,
     });
   };
@@ -383,12 +436,31 @@ export function PIIDetector() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Textarea
-                  value={redactedText}
-                  readOnly
-                  className="min-h-[200px] font-mono text-sm"
-                />
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium">Redacted Output</label>
+                    {selectedText && (
+                      <Badge variant="outline" className="text-xs">
+                        {selectedText.length} characters selected
+                      </Badge>
+                    )}
+                  </div>
+                  <Textarea
+                    ref={redactedTextareaRef}
+                    value={redactedText}
+                    onChange={(e) => setRedactedText(e.target.value)}
+                    onSelect={handleTextSelection}
+                    className="min-h-[200px] font-mono text-sm"
+                  />
+                </div>
                 <div className="flex gap-2 flex-wrap">
+                  <Button 
+                    onClick={handleManualRedact} 
+                    variant="secondary"
+                    disabled={!selectedText}
+                  >
+                    Manual Redact
+                  </Button>
                   <Button onClick={handleCopy} className="flex-1" variant="outline">
                     <Download className="h-4 w-4 mr-2" />
                     Copy Text
