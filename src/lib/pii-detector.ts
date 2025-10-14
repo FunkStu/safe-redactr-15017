@@ -165,52 +165,37 @@ export class BrowserPIIDetector {
     const normalized = text.trim().replace(/[.,!?;:]/g, '');
     const words = normalized.split(/\s+/);
     
-    // Business/financial term patterns that are NOT person names
-    const businessTerms = new Set([
-      'card', 'account', 'service', 'plan', 'model', 'fund', 'balance',
-      'portfolio', 'investment', 'asset', 'liability', 'credit', 'debit',
-      'growth', 'income', 'expense', 'profit', 'loss', 'rate', 'return',
-      'adviser', 'advisor', 'client', 'action', 'analysis', 'strategy',
-      'managed', 'management', 'platform', 'wrap', 'super', 'benefit',
-      'admin', 'administration', 'custodian', 'liquidity', 'reporting',
-      'rationale', 'trust', 'contributions', 'considerations', 'implementation',
-      'step', 'task', 'responsible', 'timeline', 'remuneration', 'fee',
-      'notes', 'advice', 'ongoing', 'disclosures', 'assumptions', 'contribution',
-      'gains', 'taxation', 'office', 'sample', 'comparison', 'profile',
-      'questionnaire', 'summary', 'setup', 'checklist', 'proceed', 'statement',
-      'form', 'solutions', 'school', 'secondary', 'retain', 'mortgage',
-      'current', 'funds', 'initial', 'important', 'capital', 'australian'
-    ]);
-    
-    // Month names are not person names when in pairs
-    const months = new Set([
-      'january', 'february', 'march', 'april', 'may', 'june',
-      'july', 'august', 'september', 'october', 'november', 'december'
-    ]);
-    
-    // Check each word in the detection
-    for (const word of words) {
-      const lower = word.toLowerCase();
-      
-      // If any word is a business term, reject it
-      if (businessTerms.has(lower)) return false;
-      
-      // If any word is a month name, reject it
-      if (months.has(lower)) return false;
+    // Single word: Must be in name database
+    if (words.length === 1) {
+      return this.nameDatabase.isFirstName(words[0]) || this.nameDatabase.isLastName(words[0]);
     }
     
-    // If it's a single short word (< 3 chars), reject unless it's in name database
-    if (words.length === 1 && words[0].length < 3) return false;
-    
-    // For multi-word detections, at least one word should be in the name database
-    if (words.length > 1) {
-      const hasValidName = words.some(word => 
-        this.nameDatabase.isFirstName(word) || this.nameDatabase.isLastName(word)
-      );
-      if (!hasValidName) return false;
+    // Two words: Check if it's a valid First+Last or Title+Name pattern
+    if (words.length === 2) {
+      const [first, second] = words;
+      
+      // First + Last name pattern
+      if (this.nameDatabase.isFirstName(first) && this.nameDatabase.isLastName(second)) {
+        return true;
+      }
+      
+      // Title + Name pattern (Mr./Ms./Dr. etc.)
+      const titles = new Set(['mr', 'mrs', 'ms', 'dr', 'miss', 'prof', 'sir', 'dame']);
+      if (titles.has(first.toLowerCase()) && 
+          (this.nameDatabase.isFirstName(second) || this.nameDatabase.isLastName(second))) {
+        return true;
+      }
+      
+      return false;
     }
     
-    return true;
+    // Three or more words: Require majority to be valid names
+    const validNameWords = words.filter(word => 
+      this.nameDatabase.isFirstName(word) || this.nameDatabase.isLastName(word)
+    );
+    
+    // At least 50% of words must be valid names
+    return validNameWords.length >= Math.ceil(words.length / 2);
   }
 
   private mapLabelToPII(label: string): string {
