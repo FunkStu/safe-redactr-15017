@@ -547,7 +547,7 @@ export function PIIDetector() {
             <Button 
               onClick={handleDetect} 
               disabled={!inputText.trim() || isDetecting || initProgress === 0}
-              className="flex-1"
+              className="flex-1 bg-[#003878] hover:bg-[#003878]/90 text-white"
             >
               {isDetecting ? 'Detecting PII...' : 'Detect PII'}
             </Button>
