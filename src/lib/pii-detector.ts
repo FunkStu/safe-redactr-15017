@@ -374,8 +374,17 @@ export class BrowserPIIDetector {
       // rebase spans to original doc
       modelEntities.push(...ents.map(e => ({ ...e, start: e.start + s.offset, end: e.end + s.offset })));
     }
+    
+    // --- TEMP DEBUG ---
     (window as any)._modelEntities = modelEntities;
-    console.table(modelEntities.map(e => ({ text:e.text, label:e.label, score:e.score })));
+    console.log('👁️  MODEL ENTITIES (raw)', modelEntities.length);
+    console.table(modelEntities.map((e:any)=>({
+      text: e.text,
+      label: e.label,
+      score: e.score?.toFixed(2)
+    })));
+    // --- END DEBUG ---
+    
     console.log('counts: model raw', modelEntities.length);
 
     const all = [...structured, ...modelEntities];
