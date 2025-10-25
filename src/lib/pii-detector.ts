@@ -268,50 +268,63 @@ export class BrowserPIIDetector {
     if (!this.classifier) {
       await this.initialize();
     }
-    
-    // Try native aggregation first
-    let raw = await this.classifier(text, { aggregation_strategy: 'simple' });
-    
-    // If aggregation returns empty or problematic results, perform manual merge
-    if (!Array.isArray(raw) || raw.length === 0) {
-      console.warn('Aggregation returned empty — performing manual merge fallback');
-      const tokens = await this.classifier(text);
-      raw = [];
-      let current: any = null;
-      
-      for (const t of tokens) {
-        const label = t.entity_group || t.entity || '';
-        if (!label) continue;
-        
-        if (label.startsWith('B-') || !current) {
-          // Start new entity
-          if (current) raw.push(current);
-          current = {
-            word: t.word.replace(/^##/, ''),
-            entity_group: label.replace(/^B-/, ''),
-            start: t.start,
-            end: t.end,
-            score: t.score,
-          };
-        } else if (label.startsWith('I-') && current) {
-          // Continue current entity
-          current.word += t.word.startsWith('##') ? t.word.slice(2) : ' ' + t.word;
-          current.end = t.end;
-          current.score = Math.max(current.score, t.score);
+
+    try {
+      // 1) Try library aggregation
+      let raw = await this.classifier(text, { aggregation_strategy: 'simple' });
+
+      // 2) Decide if output still looks tokenized (tiny tokens / ## pieces / BIO tags)
+      const looksTokenized = Array.isArray(raw) && raw.length > 0 && raw.some((r: any) =>
+        (r.word && (r.word.length <= 3 || r.word.startsWith('##'))) ||
+        (typeof r.entity === 'string' && (/^[BI]-/.test(r.entity)))
+      );
+
+      // 3) If empty OR still tokenized, do manual merge on raw tokens
+      if (!Array.isArray(raw) || raw.length === 0 || looksTokenized) {
+        const tokens = await this.classifier(text);
+        raw = [];
+        let cur: any = null;
+        for (const t of tokens) {
+          const tag = (t.entity_group || t.entity || '').toString();
+          if (!tag) continue;
+
+          const begins = tag.startsWith('B-');
+          const inside = tag.startsWith('I-');
+
+          if (begins || !cur) {
+            if (cur) raw.push(cur);
+            cur = {
+              word: (t.word || '').replace(/^##/, ''),
+              label: tag.replace(/^B-/, '').replace(/^I-/, ''),
+              start: t.start ?? 0,
+              end: t.end ?? 0,
+              score: t.score ?? 1,
+            };
+          } else if (inside && cur) {
+            cur.word += (t.word || '').startsWith('##') ? (t.word as string).slice(2) : ' ' + t.word;
+            cur.end = t.end ?? cur.end;
+            cur.score = Math.max(cur.score, t.score ?? cur.score);
+          } else if ((t.word || '').startsWith('##') && cur) {
+            cur.word += (t.word as string).slice(2);
+            cur.end = t.end ?? cur.end;
+          }
         }
+        if (cur) raw.push(cur);
       }
-      if (current) raw.push(current);
+
+      // 4) Map to Entity
+      return raw.map((r: any) => ({
+        text: r.word || r.text || '',
+        label: (r.entity_group || r.label || '').replace(/^B-/, '').replace(/^I-/, ''),
+        start: r.start ?? 0,
+        end: r.end ?? 0,
+        score: r.score ?? 1,
+        source: 'model',
+      }));
+    } catch (e) {
+      console.error('detectNER error', e);
+      return [];
     }
-    
-    // Map to Entity format with proper label normalization
-    return raw.map((r: any) => ({
-      text: (r.word || r.text || '').trim(),
-      label: this.mapNERLabelToEntity((r.entity_group || r.entity || r.label || '').replace(/^B-/, '')),
-      start: r.start ?? 0,
-      end: r.end ?? 0,
-      score: r.score ?? 0,
-      source: 'model' as const
-    }));
   }
 
   private mapNERLabelToEntity(label: string): Entity['label'] {
