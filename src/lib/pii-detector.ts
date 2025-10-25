@@ -346,7 +346,27 @@ export class BrowserPIIDetector {
     const structured = detectStructured(text);
     console.log('counts: structured', structured.length);
 
-    const modelEntities = await this.detectNER(text);
+    // Safe chunking by paragraphs
+    const parts = text.split(/\n\s*\n+/); // paragraph-level chunks
+    const slices: {text:string, offset:number}[] = [];
+    let offset = 0;
+    for (const p of parts) {
+      const t = p.trim();
+      if (!t) { offset += p.length + 2; continue; }
+      // Cap large paragraphs
+      for (let i = 0; i < t.length; i += 3500) {
+        const chunk = t.slice(i, i + 3500);
+        slices.push({ text: chunk, offset: offset + i });
+      }
+      offset += p.length + 2; // account for split removal
+    }
+
+    let modelEntities: Entity[] = [];
+    for (const s of slices) {
+      const ents = await this.detectNER(s.text);
+      // rebase spans to original doc
+      modelEntities.push(...ents.map(e => ({ ...e, start: e.start + s.offset, end: e.end + s.offset })));
+    }
     console.log('counts: model raw', modelEntities.length);
 
     const all = [...structured, ...modelEntities];
