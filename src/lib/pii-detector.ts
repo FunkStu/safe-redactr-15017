@@ -329,12 +329,21 @@ export class BrowserPIIDetector {
   }
 
   async detectAll(text: string): Promise<Entity[]> {
+    console.time('detectAll');
     const structured = detectStructured(text);
+    console.log('counts: structured', structured.length);
+
     const modelEntities = await this.detectNER(text);
-    console.log('MODEL ENTITIES:', modelEntities.length, modelEntities);
-    console.table(modelEntities.map(e => ({text:e.text, label:e.label, score:e.score})));
+    console.log('counts: model raw', modelEntities.length);
+
     const all = [...structured, ...modelEntities];
-    return reconcile(all);
+    console.log('counts: combined pre-reconcile', all.length);
+
+    const reconciled = reconcile(all);
+    console.log('counts: reconciled', reconciled.length);
+    console.timeEnd('detectAll');
+
+    return reconciled;
   }
 
   // Detect only highly structured data that AI cannot understand
