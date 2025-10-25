@@ -42,6 +42,8 @@ export function detectStructured(text: string): Entity[] {
   loose(RX.EMAIL, 'EMAIL');
   loose(RX.PHONE, 'PHONE');
   loose(RX.DOB,   'DOB');
+  loose(RX.ADDRESS, 'ADDRESS');
+  loose(RX.ORG_SUFFIX, 'ORG');
 
   return out;
 }
