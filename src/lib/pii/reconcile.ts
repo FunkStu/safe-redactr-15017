@@ -1,6 +1,20 @@
 import type { Entity } from './types';
 
-const THRESH: Record<string, number> = { PERSON: 0.80, ORG: 0.85, LOC: 0.80, ADDRESS: 0.85 };
+const labelMap: Record<string,string> = {
+  PER: 'PERSON',
+  LOC: 'ADDRESS',
+  ORG: 'ORG',
+  MISC: 'ORG',
+  PERSON: 'PERSON',
+  ORGANIZATION: 'ORG',
+  LOCATION: 'ADDRESS',
+};
+
+const THRESH: Record<string, number> = {
+  PERSON: 0.60,
+  ORG: 0.65,
+  ADDRESS: 0.60,
+};
 
 export function normalizeEntity(e: Entity): Entity | null {
   let t = e.text.replace(/\s+/g,' ').trim();
@@ -14,6 +28,10 @@ export function normalizeEntity(e: Entity): Entity | null {
 
   // Keep honorifics but normalise spacing
   t = t.replace(/\b(Mr|Mrs|Ms|Dr|Prof)\.?\s+/i, '$1 ');
+  
+  // Remap label using labelMap
+  e.label = (labelMap[e.label] || e.label) as Entity['label'];
+  
   return { ...e, text: t };
 }
 
