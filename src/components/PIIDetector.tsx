@@ -5,7 +5,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
-import { BrowserPIIDetector, PIIEntity } from '@/lib/pii-detector';
+import { BrowserPIIDetector } from '@/lib/pii-detector';
+import type { Entity } from '@/lib/pii/types';
 import { Download, Upload, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
 import { ComplianceDialog } from '@/components/ComplianceDialog';
 import { AccuracyDisclaimer } from '@/components/AccuracyDisclaimer';
@@ -13,7 +14,7 @@ import { TermsOfUse } from '@/components/TermsOfUse';
 
 export function PIIDetector() {
   const [inputText, setInputText] = useState('');
-  const [detectedEntities, setDetectedEntities] = useState<PIIEntity[]>([]);
+  const [detectedEntities, setDetectedEntities] = useState<Entity[]>([]);
   const [isDetecting, setIsDetecting] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
   const [initProgress, setInitProgress] = useState(0);
@@ -418,16 +419,21 @@ export function PIIDetector() {
 
   const getLabelColor = (label: string) => {
     const colors: { [key: string]: string } = {
-      'Person Name': 'bg-red-500',
-      'Email': 'bg-orange-500',
-      'Phone Number': 'bg-yellow-500',
+      'PERSON': 'bg-red-500',
+      'EMAIL': 'bg-orange-500',
+      'PHONE': 'bg-yellow-500',
       'ABN': 'bg-green-500',
       'TFN': 'bg-blue-500',
-      'Medicare Number': 'bg-indigo-500',
-      'Credit Card': 'bg-purple-500',
-      'Bank Account': 'bg-pink-500',
-      'Location': 'bg-cyan-500',
-      'Organization': 'bg-teal-500',
+      'MEDICARE': 'bg-indigo-500',
+      'CREDIT_CARD': 'bg-purple-500',
+      'BANK_ACCT': 'bg-pink-500',
+      'BSB': 'bg-pink-600',
+      'LOC': 'bg-cyan-500',
+      'ORG': 'bg-teal-500',
+      'ADDRESS': 'bg-blue-600',
+      'AFSL': 'bg-green-600',
+      'AR': 'bg-green-700',
+      'DOB': 'bg-red-600',
     };
     return colors[label] || 'bg-gray-500';
   };
@@ -610,7 +616,7 @@ export function PIIDetector() {
                         {entity.text}
                       </code>
                     </div>
-                    {entity.score < 1 && (
+                    {entity.score !== undefined && entity.score < 1 && (
                       <span className="text-xs text-muted-foreground">
                         {Math.round(entity.score * 100)}% confidence
                       </span>

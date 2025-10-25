@@ -1,5 +1,8 @@
 import { pipeline, env } from '@huggingface/transformers';
 import { NameDatabase } from './name-database';
+import { detectStructured } from './pii/detectStructured';
+import { reconcile } from './pii/reconcile';
+import type { Entity } from './pii/types';
 
 // Configure transformers to use browser cache
 env.allowLocalModels = false;
@@ -261,32 +264,43 @@ export class BrowserPIIDetector {
   }
 
 
-  async detectAll(text: string): Promise<PIIEntity[]> {
-    // Input validation to prevent ReDoS attacks
-    const MAX_INPUT_LENGTH = 100000; // 100KB limit
-    if (text.length > MAX_INPUT_LENGTH) {
-      throw new Error(`Input exceeds maximum length of ${MAX_INPUT_LENGTH} characters`);
-    }
+  private async detectNER(text: string): Promise<Entity[]> {
+    const piiEntities = await this.detectPII(text);
+    return piiEntities.map(e => ({
+      text: e.text,
+      label: this.mapPIILabelToEntity(e.label),
+      start: e.start,
+      end: e.end,
+      score: e.score,
+      source: 'model' as const
+    }));
+  }
 
-    // PRIMARY: AI Model - Best for unstructured data and context understanding
-    const aiEntities = await this.detectPII(text);
-    
-    // SECONDARY: Structured data patterns (only what AI can't detect)
-    const structuredEntities = this.detectStructuredData(text);
-    
-    // Combine all detections (AI is primary, no filtering)
-    const allEntities = [...aiEntities, ...structuredEntities];
-    
-    // Remove exact duplicates only
-    const uniqueEntities = allEntities.filter((entity, index, self) => 
-      index === self.findIndex(e => 
-        e.start === entity.start && 
-        e.end === entity.end && 
-        e.label === entity.label
-      )
-    );
+  private mapPIILabelToEntity(label: string): Entity['label'] {
+    const mapping: Record<string, Entity['label']> = {
+      'Person Name': 'PERSON',
+      'Location': 'LOC',
+      'Organization': 'ORG',
+      'Address': 'ADDRESS',
+      'Email': 'EMAIL',
+      'Phone Number': 'PHONE',
+      'Credit Card': 'CREDIT_CARD',
+      'Date of Birth': 'DOB',
+      'ABN': 'ABN',
+      'TFN': 'TFN',
+      'Medicare Number': 'MEDICARE',
+      'AFSL Number': 'AFSL',
+      'AR Number': 'AR',
+      'Bank Account': 'BANK_ACCT'
+    };
+    return mapping[label] || 'PERSON';
+  }
 
-    return uniqueEntities.sort((a, b) => a.start - b.start);
+  async detectAll(text: string): Promise<Entity[]> {
+    const structured = detectStructured(text);
+    const modelEntities = await this.detectNER(text);
+    const all = [...structured, ...modelEntities];
+    return reconcile(all);
   }
 
   // Detect only highly structured data that AI cannot understand
