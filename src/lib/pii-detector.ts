@@ -378,19 +378,37 @@ export class BrowserPIIDetector {
     const structured = detectStructured(text);
     console.log('counts: structured', structured.length);
 
-    // Safe chunking by paragraphs
-    const parts = text.split(/\n\s*\n+/); // paragraph-level chunks
+    // Safe chunking by paragraphs with accurate offset tracking
+    const parts = text.split(/(\n\s*\n+)/); // Capture separators
     const slices: {text:string, offset:number}[] = [];
     let offset = 0;
-    for (const p of parts) {
-      const t = p.trim();
-      if (!t) { offset += p.length + 2; continue; }
-      // Cap large paragraphs
-      for (let i = 0; i < t.length; i += 3500) {
-        const chunk = t.slice(i, i + 3500);
-        slices.push({ text: chunk, offset: offset + i });
+    
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      
+      // Skip empty or pure whitespace separators
+      if (!part || /^\s*$/.test(part)) {
+        offset += part.length;
+        continue;
       }
-      offset += p.length + 2; // account for split removal
+      
+      const t = part.trim();
+      if (!t) {
+        offset += part.length;
+        continue;
+      }
+      
+      // Find actual start of trimmed content in original part
+      const trimStart = part.indexOf(t);
+      const actualOffset = offset + trimStart;
+      
+      // Cap large paragraphs
+      for (let j = 0; j < t.length; j += 3500) {
+        const chunk = t.slice(j, j + 3500);
+        slices.push({ text: chunk, offset: actualOffset + j });
+      }
+      
+      offset += part.length;
     }
 
     let modelEntities: Entity[] = [];
@@ -406,7 +424,9 @@ export class BrowserPIIDetector {
     console.table(modelEntities.map((e:any)=>({
       text: e.text,
       label: e.label,
-      score: e.score?.toFixed(2)
+      score: e.score?.toFixed(2),
+      start: e.start,
+      end: e.end
     })));
     // --- END DEBUG ---
     
@@ -417,6 +437,22 @@ export class BrowserPIIDetector {
 
     const reconciled = reconcile(all);
     console.log('counts: reconciled', reconciled.length);
+    
+    // DEBUG: Verify entity positions match text
+    console.log('🔍 ENTITY POSITION VERIFICATION:');
+    reconciled.forEach((e, i) => {
+      const actualText = text.substring(e.start, e.end);
+      const matches = actualText === e.text;
+      if (!matches) {
+        console.warn(`❌ Entity ${i} mismatch:`, {
+          expected: e.text,
+          actual: actualText,
+          start: e.start,
+          end: e.end
+        });
+      }
+    });
+    
     console.timeEnd('detectAll');
 
     return reconciled;
