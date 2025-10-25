@@ -30,6 +30,10 @@ export function normalizeEntity(e: Entity): Entity | null {
   // Reject ALLCAPS single token as PERSON (likely codes)
   if (e.label==='PERSON' && /^\p{Lu}{2,}$/u.test(t)) return null;
 
+  // Merge consecutive ORG fragments (e.g. "Australian", "Ethical", "Super")
+  // Drop lone words that are often false-positive splits
+  if (e.label === 'ORG' && /^(Australian|Ethical|Super|Fund|Managed|Life|TPD|Income|Protection|Client|Balance|Option|Details)$/i.test(t)) return null;
+
   // TEMP: Disable business term filtering for PERSON to capture more names
   // const businessTerms = /\b(Australian|Managed|Fund|Super|TPD|Life|Income|Protection|Details|Client|Balance|Option|Contributions?|Account|Portfolio)\b/i;
   // if (e.label==='PERSON' && businessTerms.test(t)) return null;
