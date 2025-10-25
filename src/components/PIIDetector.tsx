@@ -565,7 +565,43 @@ export function PIIDetector() {
                 100% local processing - no data leaves your browser. Compliant with Australian financial regulations. <ComplianceDialog />
               </CardDescription>
             </div>
-            <TermsOfUse />
+            <div className="flex items-center gap-2">
+              <TermsOfUse />
+              {initProgress > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      const { runEval } = await import('@/lib/pii/evaluate/harness');
+                      toast({
+                        title: 'Running Evaluation',
+                        description: 'Testing detection accuracy...',
+                        duration: 2000,
+                      });
+                      const res = await runEval();
+                      console.table(res);
+                      const passing = res.filter(r => r.ok).length;
+                      toast({
+                        title: 'Evaluation Complete',
+                        description: `${passing}/${res.length} tests passing`,
+                        duration: 5000,
+                      });
+                      alert(`Eval complete: ${passing}/${res.length} passing\n\nCheck console for details.`);
+                    } catch (error) {
+                      toast({
+                        title: 'Evaluation Failed',
+                        description: error instanceof Error ? error.message : 'Unknown error',
+                        variant: 'destructive',
+                      });
+                    }
+                  }}
+                  className="text-xs"
+                >
+                  Run Eval
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
