@@ -30,9 +30,9 @@ export function normalizeEntity(e: Entity): Entity | null {
   // Reject ALLCAPS single token as PERSON (likely codes)
   if (e.label==='PERSON' && /^\p{Lu}{2,}$/u.test(t)) return null;
 
-  // Reject common financial/business terms mislabeled as PERSON
-  const businessTerms = /\b(Australian|Managed|Fund|Super|TPD|Life|Income|Protection|Details|Client|Balance|Option|Contributions?|Account|Portfolio)\b/i;
-  if (e.label==='PERSON' && businessTerms.test(t)) return null;
+  // TEMP: Disable business term filtering for PERSON to capture more names
+  // const businessTerms = /\b(Australian|Managed|Fund|Super|TPD|Life|Income|Protection|Details|Client|Balance|Option|Contributions?|Account|Portfolio)\b/i;
+  // if (e.label==='PERSON' && businessTerms.test(t)) return null;
 
   // Keep honorifics but normalise spacing
   t = t.replace(/\b(Mr|Mrs|Ms|Dr|Prof)\.?\s+/i, '$1 ');
