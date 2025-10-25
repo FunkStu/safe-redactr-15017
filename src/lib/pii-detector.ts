@@ -269,15 +269,44 @@ export class BrowserPIIDetector {
       await this.initialize();
     }
     
-    // Call model directly with simple aggregation to merge tokens
-    const raw = await this.classifier(text, { 
-      aggregation_strategy: 'simple' 
-    });
+    // Try native aggregation first
+    let raw = await this.classifier(text, { aggregation_strategy: 'simple' });
     
-    // Map raw model output to Entity format
+    // If aggregation returns empty or problematic results, perform manual merge
+    if (!Array.isArray(raw) || raw.length === 0) {
+      console.warn('Aggregation returned empty — performing manual merge fallback');
+      const tokens = await this.classifier(text);
+      raw = [];
+      let current: any = null;
+      
+      for (const t of tokens) {
+        const label = t.entity_group || t.entity || '';
+        if (!label) continue;
+        
+        if (label.startsWith('B-') || !current) {
+          // Start new entity
+          if (current) raw.push(current);
+          current = {
+            word: t.word.replace(/^##/, ''),
+            entity_group: label.replace(/^B-/, ''),
+            start: t.start,
+            end: t.end,
+            score: t.score,
+          };
+        } else if (label.startsWith('I-') && current) {
+          // Continue current entity
+          current.word += t.word.startsWith('##') ? t.word.slice(2) : ' ' + t.word;
+          current.end = t.end;
+          current.score = Math.max(current.score, t.score);
+        }
+      }
+      if (current) raw.push(current);
+    }
+    
+    // Map to Entity format with proper label normalization
     return raw.map((r: any) => ({
-      text: r.word || r.text || '',
-      label: this.mapNERLabelToEntity(r.entity_group || r.entity || 'MISC'),
+      text: (r.word || r.text || '').trim(),
+      label: this.mapNERLabelToEntity((r.entity_group || r.entity || r.label || '').replace(/^B-/, '')),
       start: r.start ?? 0,
       end: r.end ?? 0,
       score: r.score ?? 0,
