@@ -378,44 +378,53 @@ export class BrowserPIIDetector {
     const structured = detectStructured(text);
     console.log('counts: structured', structured.length);
 
-    // Safe chunking by paragraphs with accurate offset tracking
-    const parts = text.split(/(\n\s*\n+)/); // Capture separators
-    const slices: {text:string, offset:number}[] = [];
-    let offset = 0;
-    
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      
-      // Skip empty or pure whitespace separators
-      if (!part || /^\s*$/.test(part)) {
-        offset += part.length;
-        continue;
+    // Accurate paragraph + chunk slicing without trimming
+    const sliceParagraphsWithIndices = (text: string, maxLen = 3500) => {
+      const slices: Array<{ start: number; end: number; text: string }> = [];
+
+      // Split by blank lines but KEEP exact indices in the original text
+      const re = /\n\s*\n+/g;
+      let last = 0;
+      let m: RegExpExecArray | null;
+
+      while ((m = re.exec(text))) {
+        const segStart = last;
+        const segEnd = m.index;
+        // segment [segStart, segEnd)
+        for (let i = segStart; i < segEnd; i += maxLen) {
+          const start = i;
+          const end = Math.min(segEnd, i + maxLen);
+          slices.push({ start, end, text: text.slice(start, end) });
+        }
+        last = m.index + m[0].length; // skip the exact separator length
       }
-      
-      const t = part.trim();
-      if (!t) {
-        offset += part.length;
-        continue;
+
+      // tail
+      if (last < text.length) {
+        for (let i = last; i < text.length; i += maxLen) {
+          const start = i;
+          const end = Math.min(text.length, i + maxLen);
+          slices.push({ start, end, text: text.slice(start, end) });
+        }
       }
-      
-      // Find actual start of trimmed content in original part
-      const trimStart = part.indexOf(t);
-      const actualOffset = offset + trimStart;
-      
-      // Cap large paragraphs
-      for (let j = 0; j < t.length; j += 3500) {
-        const chunk = t.slice(j, j + 3500);
-        slices.push({ text: chunk, offset: actualOffset + j });
-      }
-      
-      offset += part.length;
-    }
+
+      return slices;
+    };
+
+    const slices = sliceParagraphsWithIndices(text, 3500);
 
     let modelEntities: Entity[] = [];
     for (const s of slices) {
       const ents = await this.detectNER(s.text);
-      // rebase spans to original doc
-      modelEntities.push(...ents.map(e => ({ ...e, start: e.start + s.offset, end: e.end + s.offset })));
+      
+      // REBASE using exact original indices
+      for (const e of ents) {
+        modelEntities.push({
+          ...e,
+          start: e.start + s.start,
+          end: e.end + s.start,
+        });
+      }
     }
     
     // --- TEMP DEBUG ---
