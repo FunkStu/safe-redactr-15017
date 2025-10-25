@@ -273,11 +273,26 @@ export class BrowserPIIDetector {
       // 1) Try library aggregation
       let raw = await this.classifier(text, { aggregation_strategy: 'simple' });
 
-      // 2) Decide if output still looks tokenized (tiny tokens / ## pieces / BIO tags)
-      const looksTokenized = Array.isArray(raw) && raw.length > 0 && raw.some((r: any) =>
-        (r.word && (r.word.length <= 3 || r.word.startsWith('##'))) ||
-        (typeof r.entity === 'string' && (/^[BI]-/.test(r.entity)))
-      );
+      // 2) Decide if output still looks tokenized (tiny tokens / ## pieces / BIO tags / incomplete names)
+      const looksTokenized = Array.isArray(raw) && raw.length > 0 && raw.some((r: any) => {
+        const word = r.word || '';
+        const entity = r.entity_group || r.entity || '';
+        
+        // Check for tokenization indicators
+        const hasSubwordMarker = word.startsWith('##');
+        const hasBIOTag = typeof entity === 'string' && /^[BI]-/.test(entity);
+        const isTinyToken = word.length <= 3;
+        
+        // Check for incomplete PERSON names (likely truncated by bad aggregation)
+        const isPerson = entity.toUpperCase().includes('PER') || entity === 'PERSON';
+        const looksIncomplete = isPerson && (
+          word.length === 2 ||  // "Co", "La", etc.
+          /^[A-Z][a-z]$/.test(word) ||  // Single capitalized syllable
+          word.endsWith('Co') || word.endsWith('La')  // Common truncation patterns
+        );
+        
+        return hasSubwordMarker || hasBIOTag || isTinyToken || looksIncomplete;
+      });
 
       // 3) If empty OR still tokenized, do manual merge on raw tokens
       if (!Array.isArray(raw) || raw.length === 0 || looksTokenized) {
