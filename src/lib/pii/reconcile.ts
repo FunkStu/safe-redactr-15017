@@ -93,7 +93,7 @@ export function reconcile(entities: Entity[]): Entity[] {
   });
 
   // Remove PERSON entities that are substrings of longer PERSON entities
-  return filtered.filter(e => {
+  const dedupedPersons = filtered.filter(e => {
     if (e.label !== 'PERSON') return true;
     const eText = e.text.toLowerCase();
     return !filtered.some(o => 
@@ -103,4 +103,20 @@ export function reconcile(entities: Entity[]): Entity[] {
       o.text.length > e.text.length
     );
   });
+
+  // Collapse multi-part addresses (e.g., "Osborne Road" + "Marrickville NSW" → one entity)
+  const collapsed = [...dedupedPersons];
+  for (let i = 1; i < collapsed.length; i++) {
+    const prev = collapsed[i - 1];
+    const cur = collapsed[i];
+    // Merge if both are ADDRESS and within 5 characters of each other
+    if (prev.label === 'ADDRESS' && cur.label === 'ADDRESS' && cur.start - prev.end < 5) {
+      prev.text = `${prev.text} ${cur.text}`;
+      prev.end = cur.end;  // Update end position
+      collapsed.splice(i, 1);
+      i--;  // Adjust index after removal
+    }
+  }
+
+  return collapsed;
 }
