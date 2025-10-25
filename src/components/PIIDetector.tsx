@@ -7,6 +7,8 @@ import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { BrowserPIIDetector } from '@/lib/pii-detector';
 import type { Entity } from '@/lib/pii/types';
+import { encryptJSON, decryptJSON } from '@/lib/pii/crypto';
+import { makePlaceholder } from '@/lib/pii/placeholders';
 import { Download, Upload, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
 import { ComplianceDialog } from '@/components/ComplianceDialog';
 import { AccuracyDisclaimer } from '@/components/AccuracyDisclaimer';
@@ -24,6 +26,8 @@ export function PIIDetector() {
   const [selectedText, setSelectedText] = useState('');
   const [selectionStart, setSelectionStart] = useState(0);
   const [selectionEnd, setSelectionEnd] = useState(0);
+  const [irreversible, setIrreversible] = useState(false);
+  const [deterministic, setDeterministic] = useState(true);
   const detectorRef = useRef<BrowserPIIDetector | null>(null);
   const redactedTextareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
@@ -114,17 +118,26 @@ export function PIIDetector() {
       .sort((a, b) => b.start - a.start); // Reverse order to maintain indices
 
     const newRedactionMap = new Map<string, string>();
-    entitiesToRedact.forEach((entity, index) => {
-      const placeholder = `[REDACTED_${entity.label.toUpperCase().replace(/\s/g, '_')}_${String(index + 1).padStart(3, '0')}]`;
-      newRedactionMap.set(placeholder, entity.text);
+    entitiesToRedact.forEach((entity) => {
+      const placeholder = irreversible
+        ? `[REDACTED_${entity.label}]`
+        : makePlaceholder(entity.label, entity.text, deterministic);
+      
+      if (!irreversible) {
+        newRedactionMap.set(placeholder, entity.text);
+      }
       result = result.substring(0, entity.start) + placeholder + result.substring(entity.end);
     });
 
-    setRedactionMap(newRedactionMap);
+    if (!irreversible) {
+      setRedactionMap(newRedactionMap);
+    }
     setRedactedText(result);
     toast({
       title: 'Redaction Complete',
-      description: `Redacted ${entitiesToRedact.length} items`,
+      description: irreversible 
+        ? `Permanently redacted ${entitiesToRedact.length} items`
+        : `Redacted ${entitiesToRedact.length} items`,
       duration: 3000,
     });
   };
@@ -340,6 +353,106 @@ export function PIIDetector() {
     e.target.value = '';
   };
 
+  const handleExportEncryptedMapping = async () => {
+    if (irreversible) {
+      toast({
+        title: 'Not Available',
+        description: 'Irreversible mode: no mapping to export.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (redactionMap.size === 0) {
+      toast({
+        title: 'No Mapping',
+        description: 'No redaction mapping available to export',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    const pass = prompt('Set a passphrase to encrypt the mapping:');
+    if (!pass) return;
+    
+    try {
+      const mappingData = {
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        mapping: Object.fromEntries(redactionMap),
+      };
+      
+      const blob = await encryptJSON(mappingData, pass);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(blob)], {type:'application/json'}));
+      const a = document.createElement('a'); 
+      a.href = url; 
+      a.download = `mapping-${Date.now()}.piimap.json`; 
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: 'Encrypted Mapping Exported',
+        description: 'Mapping has been encrypted and saved',
+        duration: 3000,
+      });
+    } catch (error) {
+      toast({
+        title: 'Export Failed',
+        description: error instanceof Error ? error.message : 'Failed to encrypt mapping',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleImportEncryptedMapping = async () => {
+    const file = await new Promise<File | null>(resolve => {
+      const inp = document.createElement('input'); 
+      inp.type='file'; 
+      inp.accept='.json,.piimap.json';
+      inp.onchange = () => resolve(inp.files?.[0] ?? null); 
+      inp.click();
+    });
+    
+    if (!file) return;
+    
+    const pass = prompt('Enter the mapping passphrase:'); 
+    if (!pass) return;
+    
+    try {
+      const content = await file.text();
+      const blob = JSON.parse(content);
+      const mappingData = await decryptJSON(blob, pass);
+      
+      if (!mappingData.mapping || typeof mappingData.mapping !== 'object') {
+        throw new Error('Invalid mapping format');
+      }
+      
+      const validatedMap = new Map<string, string>();
+      Object.entries(mappingData.mapping).forEach(([key, value]) => {
+        if (typeof key === 'string' && typeof value === 'string') {
+          validatedMap.set(key, value);
+        }
+      });
+      
+      if (validatedMap.size === 0) {
+        throw new Error('No valid mappings found');
+      }
+      
+      setRedactionMap(validatedMap);
+      toast({
+        title: 'Encrypted Mapping Imported',
+        description: `Loaded ${validatedMap.size} mappings`,
+        duration: 3000,
+      });
+    } catch (error) {
+      toast({
+        title: 'Import Failed',
+        description: error instanceof Error ? error.message : 'Failed to decrypt or import mapping',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -503,6 +616,35 @@ export function PIIDetector() {
                 </div>
               </div>
             </>
+          )}
+
+          {initProgress > 0 && !isInitializing && (
+            <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+              <h3 className="font-semibold text-sm">Redaction Settings</h3>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={irreversible} 
+                    onChange={e => setIrreversible(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  <span>Irreversible redaction (no mapping; permanent)</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={deterministic} 
+                    onChange={e => setDeterministic(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300"
+                    disabled={irreversible}
+                  />
+                  <span className={irreversible ? 'text-muted-foreground' : ''}>
+                    Deterministic placeholders (same value → same token)
+                  </span>
+                </label>
+              </div>
+            </div>
           )}
 
           <div className="space-y-2">
@@ -675,7 +817,8 @@ export function PIIDetector() {
                   <Button 
                     onClick={handleManualRedact} 
                     variant="secondary"
-                    disabled={!selectedText}
+                    disabled={!selectedText || irreversible}
+                    title={irreversible ? "Manual redaction not available in irreversible mode" : ""}
                   >
                     Manual Redact
                   </Button>
@@ -688,6 +831,10 @@ export function PIIDetector() {
                       <Button onClick={handleExportMapping} className="flex-1" variant="outline">
                         <Download className="h-4 w-4 mr-2" />
                         Export Mapping
+                      </Button>
+                      <Button onClick={handleExportEncryptedMapping} className="flex-1" variant="outline">
+                        <Download className="h-4 w-4 mr-2" />
+                        Export Encrypted
                       </Button>
                       <Button onClick={handleUnredact} className="flex-1" variant="outline">
                         Unredact
@@ -709,6 +856,14 @@ export function PIIDetector() {
                       onChange={handleImportMapping}
                     />
                   </label>
+                  <Button 
+                    onClick={handleImportEncryptedMapping} 
+                    className="flex-1" 
+                    variant="outline"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import Encrypted
+                  </Button>
                 </div>
               </CardContent>
             </Card>
