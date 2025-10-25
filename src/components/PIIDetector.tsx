@@ -275,7 +275,20 @@ export function PIIDetector() {
   };
 
   const handleExportMapping = () => {
-    if (Object.keys(redactionMap).length === 0) {
+    // Read from localStorage for most recent map
+    let mapToExport = redactionMap;
+    
+    try {
+      const stored = localStorage.getItem('lastRedactionMap');
+      if (stored) {
+        mapToExport = JSON.parse(stored);
+        console.log('📤 Exporting map from localStorage');
+      }
+    } catch (err) {
+      console.warn('⚠️ Could not read from localStorage, using state:', err);
+    }
+
+    if (Object.keys(mapToExport).length === 0) {
       toast({
         title: 'No Mapping',
         description: 'No redaction mapping available to export',
@@ -288,7 +301,7 @@ export function PIIDetector() {
       version: '2.0',
       mode: 'semantic',
       timestamp: new Date().toISOString(),
-      mapping: redactionMap,
+      mapping: mapToExport,
     };
 
     const blob = new Blob([JSON.stringify(mappingData, null, 2)], { type: 'application/json' });

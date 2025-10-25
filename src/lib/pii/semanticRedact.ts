@@ -59,5 +59,15 @@ export function redactTextSemantic(
     out = embedFrontMatter({ redactionMap: serializable }, out);
   }
 
+  // ✅ NEW: also persist plain JSON map locally for export/import
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('lastRedactionMap', JSON.stringify(map, null, 2));
+      console.log('💾 Redaction map saved to localStorage');
+    } catch (err) {
+      console.warn('⚠️ Could not save redaction map to localStorage:', err);
+    }
+  }
+
   return { redacted: out, map };
 }
