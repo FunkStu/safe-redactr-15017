@@ -320,14 +320,24 @@ export class BrowserPIIDetector {
       }
 
       // 4) Map to Entity
-      return raw.map((r: any) => ({
+      // Map model labels to internal schema
+      const labelMap: Record<string, string> = {
+        PER: 'PERSON',
+        ORG: 'ORG',
+        LOC: 'ADDRESS',   // or 'LOC' if you prefer
+        MISC: 'ORG'       // often company/brand context
+      };
+
+      const mapped = raw.map((r: any) => ({
         text: r.word || r.text || '',
-        label: (r.entity_group || r.label || '').replace(/^B-/, '').replace(/^I-/, ''),
+        label: labelMap[(r.entity_group || r.label || '').replace(/^[BI]-/, '')] || (r.entity_group || r.label || ''),
         start: r.start ?? 0,
         end: r.end ?? 0,
         score: r.score ?? 1,
         source: 'model',
       }));
+
+      return mapped;
     } catch (e) {
       console.error('detectNER error', e);
       return [];
