@@ -19,12 +19,19 @@ const THRESH: Record<string, number> = {
 export function normalizeEntity(e: Entity): Entity | null {
   let t = e.text.replace(/\s+/g,' ').trim();
 
+  // Reject short/empty
+  if (t.length < 2) return null;
+
   // Business suffix → ORG
-  if (/\b(Pty\s+Ltd|Ltd|Trust|Unit\s+Trust|Superannuation\s+Fund)\b/i.test(t))
+  if (/\b(Pty\s+Ltd|Ltd|Trust|Unit\s+Trust|Superannuation\s+Fund|Engineering|Solutions|Department|Council|Bank)\b/i.test(t))
     return { ...e, label:'ORG', text:t };
 
   // Reject ALLCAPS single token as PERSON (likely codes)
   if (e.label==='PERSON' && /^\p{Lu}{2,}$/u.test(t)) return null;
+
+  // Reject common financial/business terms mislabeled as PERSON
+  const businessTerms = /\b(Australian|Managed|Fund|Super|TPD|Life|Income|Protection|Details|Client|Balance|Option|Contributions?|Account|Portfolio)\b/i;
+  if (e.label==='PERSON' && businessTerms.test(t)) return null;
 
   // Keep honorifics but normalise spacing
   t = t.replace(/\b(Mr|Mrs|Ms|Dr|Prof)\.?\s+/i, '$1 ');
@@ -71,12 +78,24 @@ export function reconcile(entities: Entity[]): Entity[] {
     if (!replaced) out.push(e);
   }
 
-  // Final de-dupe by span+label+text
+  // Final de-dupe by span+label+text, and remove substrings of longer entities
   const seen = new Set<string>();
-  return out.filter(e => {
+  const filtered = out.filter(e => {
     const k = `${e.start}:${e.end}:${e.label}:${e.text.toLowerCase()}`;
     if (seen.has(k)) return false;
     seen.add(k);
     return true;
+  });
+
+  // Remove PERSON entities that are substrings of longer PERSON entities
+  return filtered.filter(e => {
+    if (e.label !== 'PERSON') return true;
+    const eText = e.text.toLowerCase();
+    return !filtered.some(o => 
+      o.label === 'PERSON' && 
+      o !== e && 
+      o.text.toLowerCase().includes(eText) &&
+      o.text.length > e.text.length
+    );
   });
 }

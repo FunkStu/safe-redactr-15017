@@ -8,5 +8,5 @@ export const RX = {
   PHONE: /\b(?:\+?61\s?|0)([2-478])\s?\d{2,4}\s?\d{3}\s?\d{3}\b/g,
   CREDIT_CARD: /\b(?:\d[ -]?){12,19}\b/g,
   ADDRESS: /\b\d+\s+[A-Z][a-zA-Z]+\s+(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Close|Lane|Way|Place|Cres|Court|Ct|Drive|Dr|Parade)\b[^\n]{0,120}?\b(?:NSW|QLD|VIC|WA|SA|TAS|ACT|NT)\s*\d{4}\b/g,
-  ORG_SUFFIX: /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,4}\s+(?:Pty\s+Ltd|Ltd|Trust|Fund|Super|Superannuation|Bank|Council|Department)\b(?![^\n]{0,25}\b(?:Details|Client|Balance|Option|Contributions)\b)/g,
+  ORG_SUFFIX: /\b(?!(?:Australian|Managed|Life|TPD|Income|Client|Option|Details|Balance|Contributions?)\b)[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+(?:Pty\s+Ltd|Ltd|Trust|Fund|Super|Superannuation|Bank|Council|Department|Engineering|Solutions|Services)\b/g,
 };

@@ -290,22 +290,29 @@ export class BrowserPIIDetector {
 
           const begins = tag.startsWith('B-');
           const inside = tag.startsWith('I-');
+          const word = t.word || '';
 
           if (begins || !cur) {
             if (cur) raw.push(cur);
             cur = {
-              word: (t.word || '').replace(/^##/, ''),
-              label: tag.replace(/^B-/, '').replace(/^I-/, ''),
+              word: word.replace(/^##/, ''),
+              label: tag.replace(/^[BI]-/, ''),
               start: t.start ?? 0,
               end: t.end ?? 0,
               score: t.score ?? 1,
             };
           } else if (inside && cur) {
-            cur.word += (t.word || '').startsWith('##') ? (t.word as string).slice(2) : ' ' + t.word;
+            // Always append for I- tags
+            cur.word += word.startsWith('##') ? word.slice(2) : ' ' + word;
             cur.end = t.end ?? cur.end;
             cur.score = Math.max(cur.score, t.score ?? cur.score);
-          } else if ((t.word || '').startsWith('##') && cur) {
-            cur.word += (t.word as string).slice(2);
+          } else if (word.startsWith('##') && cur) {
+            // Continuation subword
+            cur.word += word.slice(2);
+            cur.end = t.end ?? cur.end;
+          } else if (cur && tag === cur.label) {
+            // Same label, likely continuation without explicit I- tag
+            cur.word += word.startsWith('##') ? word.slice(2) : ' ' + word;
             cur.end = t.end ?? cur.end;
           }
         }
