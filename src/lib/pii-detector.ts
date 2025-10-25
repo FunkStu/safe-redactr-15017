@@ -299,6 +299,7 @@ export class BrowserPIIDetector {
   async detectAll(text: string): Promise<Entity[]> {
     const structured = detectStructured(text);
     const modelEntities = await this.detectNER(text);
+    console.log('MODEL ENTITIES:', modelEntities.length, modelEntities);
     const all = [...structured, ...modelEntities];
     return reconcile(all);
   }
