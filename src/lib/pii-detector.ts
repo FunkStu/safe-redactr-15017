@@ -300,6 +300,7 @@ export class BrowserPIIDetector {
     const structured = detectStructured(text);
     const modelEntities = await this.detectNER(text);
     console.log('MODEL ENTITIES:', modelEntities.length, modelEntities);
+    console.table(modelEntities.map(e => ({text:e.text, label:e.label, score:e.score})));
     const all = [...structured, ...modelEntities];
     return reconcile(all);
   }
