@@ -378,44 +378,35 @@ export class BrowserPIIDetector {
     const structured = detectStructured(text);
     console.log('counts: structured', structured.length);
 
-    // Safe chunking by paragraphs with accurate offset tracking
-    const parts = text.split(/(\n\s*\n+)/); // Capture separators
-    const slices: {text:string, offset:number}[] = [];
-    let offset = 0;
-    
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      
-      // Skip empty or pure whitespace separators
-      if (!part || /^\s*$/.test(part)) {
-        offset += part.length;
-        continue;
-      }
-      
-      const t = part.trim();
-      if (!t) {
-        offset += part.length;
-        continue;
-      }
-      
-      // Find actual start of trimmed content in original part
-      const trimStart = part.indexOf(t);
-      const actualOffset = offset + trimStart;
-      
-      // Cap large paragraphs
-      for (let j = 0; j < t.length; j += 3500) {
-        const chunk = t.slice(j, j + 3500);
-        slices.push({ text: chunk, offset: actualOffset + j });
-      }
-      
-      offset += part.length;
-    }
-
+    // Only chunk for very large documents (>4000 chars)
     let modelEntities: Entity[] = [];
-    for (const s of slices) {
-      const ents = await this.detectNER(s.text);
-      // rebase spans to original doc
-      modelEntities.push(...ents.map(e => ({ ...e, start: e.start + s.offset, end: e.end + s.offset })));
+    
+    if (text.length > 4000) {
+      console.warn('Large document detected, using chunking...');
+      // Simple fixed-size chunks with overlap
+      const chunkSize = 3500;
+      const overlap = 200;
+      
+      for (let i = 0; i < text.length; i += (chunkSize - overlap)) {
+        const chunk = text.slice(i, i + chunkSize);
+        const ents = await this.detectNER(chunk);
+        
+        // Rebase to original positions and filter out overlap region entities
+        const rebased = ents.map(e => ({ 
+          ...e, 
+          start: e.start + i, 
+          end: e.end + i 
+        })).filter(e => {
+          // Skip entities in overlap region (except for last chunk)
+          if (i > 0 && e.start < i + overlap) return false;
+          return true;
+        });
+        
+        modelEntities.push(...rebased);
+      }
+    } else {
+      // Process full text directly (most common case)
+      modelEntities = await this.detectNER(text);
     }
     
     // --- TEMP DEBUG ---
@@ -444,12 +435,16 @@ export class BrowserPIIDetector {
       const actualText = text.substring(e.start, e.end);
       const matches = actualText === e.text;
       if (!matches) {
-        console.warn(`❌ Entity ${i} mismatch:`, {
+        console.warn(`❌ Entity ${i} "${e.label}" mismatch:`, {
           expected: e.text,
           actual: actualText,
           start: e.start,
-          end: e.end
+          end: e.end,
+          actualLength: actualText.length,
+          expectedLength: e.text.length
         });
+      } else {
+        console.log(`✅ Entity ${i} "${e.label}" matches: "${e.text}"`);
       }
     });
     
