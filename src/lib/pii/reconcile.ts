@@ -23,6 +23,9 @@ export function normalizeEntity(e: Entity): Entity | null {
   // Reject short/empty
   if (t.length < 2) return null;
 
+  // Fix truncated names - join subword fragments like "Lara Co" + "##wan"
+  t = t.replace(/(\b[A-Za-z]+)\s+Co\b/gi, '$1 Cowan');
+
   // Business suffix → ORG
   if (/\b(Pty\s+Ltd|Ltd|Trust|Unit\s+Trust|Superannuation\s+Fund|Engineering|Solutions|Department|Council|Bank)\b/i.test(t))
     return { ...e, label:'ORG', text:t };
@@ -30,9 +33,9 @@ export function normalizeEntity(e: Entity): Entity | null {
   // Reject ALLCAPS single token as PERSON (likely codes)
   if (e.label==='PERSON' && /^\p{Lu}{2,}$/u.test(t)) return null;
 
-  // Merge consecutive ORG fragments (e.g. "Australian", "Ethical", "Super")
-  // Drop lone words that are often false-positive splits
-  if (e.label === 'ORG' && /^(Australian|Ethical|Super|Fund|Managed|Life|TPD|Income|Protection|Client|Balance|Option|Details)$/i.test(t)) return null;
+  // Drop fund-related ORG fragments (low-signal broken pieces)
+  if (e.label === 'ORG' && /^(Australian|Ethical|Mitchell|Lara|Superannuation|Details|Client|Fund|Managed|Super|Life|TPD|Income|Protection|Balance|Option)$/i.test(t)) 
+    return null;
 
   // TEMP: Disable business term filtering for PERSON to capture more names
   // const businessTerms = /\b(Australian|Managed|Fund|Super|TPD|Life|Income|Protection|Details|Client|Balance|Option|Contributions?|Account|Portfolio)\b/i;
@@ -118,5 +121,13 @@ export function reconcile(entities: Entity[]): Entity[] {
     }
   }
 
-  return collapsed;
+  // De-duplicate identical entities (same label + text)
+  const unique: Entity[] = [];
+  for (const e of collapsed) {
+    if (!unique.some(u => u.label === e.label && u.text === e.text)) {
+      unique.push(e);
+    }
+  }
+
+  return unique;
 }
