@@ -11,9 +11,10 @@ const labelMap: Record<string,string> = {
 };
 
 const THRESH: Record<string, number> = {
-  PERSON: 0.60,
-  ORG: 0.65,
-  ADDRESS: 0.60,
+  PERSON: 0.55,
+  ORG: 0.70,
+  ADDRESS: 0.70,
+  LOC: 0.70
 };
 
 export function normalizeEntity(e: Entity): Entity | null {
