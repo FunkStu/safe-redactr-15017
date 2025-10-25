@@ -9,6 +9,7 @@ import { BrowserPIIDetector } from '@/lib/pii-detector';
 import type { Entity } from '@/lib/pii/types';
 import { encryptJSON, decryptJSON } from '@/lib/pii/crypto';
 import { makePlaceholder } from '@/lib/pii/placeholders';
+import { redactText } from '@/lib/pii/redact';
 import { Download, Upload, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
 import { ComplianceDialog } from '@/components/ComplianceDialog';
 import { AccuracyDisclaimer } from '@/components/AccuracyDisclaimer';
@@ -112,22 +113,28 @@ export function PIIDetector() {
   };
 
   const handleRedact = () => {
-    let result = inputText;
     const entitiesToRedact = detectedEntities
       .filter((_, i) => selectedEntities.has(i))
       .sort((a, b) => b.start - a.start); // Reverse order to maintain indices
 
     const newRedactionMap = new Map<string, string>();
-    entitiesToRedact.forEach((entity) => {
-      const placeholder = irreversible
-        ? `[REDACTED_${entity.label}]`
-        : makePlaceholder(entity.label, entity.text, deterministic);
-      
-      if (!irreversible) {
-        newRedactionMap.set(placeholder, entity.text);
+    
+    // Use redactText with self-healing span rescue
+    const result = redactText(
+      inputText,
+      entitiesToRedact,
+      (entity) => {
+        const placeholder = irreversible
+          ? `[REDACTED_${entity.label}]`
+          : makePlaceholder(entity.label, entity.text, deterministic);
+        
+        if (!irreversible) {
+          newRedactionMap.set(placeholder, entity.text);
+        }
+        
+        return placeholder;
       }
-      result = result.substring(0, entity.start) + placeholder + result.substring(entity.end);
-    });
+    );
 
     if (!irreversible) {
       setRedactionMap(newRedactionMap);
