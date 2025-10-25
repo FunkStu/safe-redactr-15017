@@ -114,39 +114,40 @@ export function PIIDetector() {
 
   const handleRedact = () => {
     const entitiesToRedact = detectedEntities
-      .filter((_, i) => selectedEntities.has(i))
-      .sort((a, b) => b.start - a.start); // Reverse order to maintain indices
+      .filter((_, i) => selectedEntities.has(i));
 
-    const newRedactionMap = new Map<string, string>();
-    
-    // Use redactText with self-healing span rescue
-    const result = redactText(
-      inputText,
-      entitiesToRedact,
-      (entity) => {
-        const placeholder = irreversible
-          ? `[REDACTED_${entity.label}]`
-          : makePlaceholder(entity.label, entity.text, deterministic);
-        
-        if (!irreversible) {
-          newRedactionMap.set(placeholder, entity.text);
-        }
-        
-        return placeholder;
-      }
-    );
-
-    if (!irreversible) {
-      setRedactionMap(newRedactionMap);
+    if (irreversible) {
+      // For irreversible mode, use simple placeholder replacement
+      let result = inputText;
+      const sorted = [...entitiesToRedact].sort((a, b) => b.start - a.start);
+      
+      sorted.forEach((entity) => {
+        const placeholder = `[REDACTED_${entity.label}]`;
+        result = result.substring(0, entity.start) + placeholder + result.substring(entity.end);
+      });
+      
+      setRedactedText(result);
+      toast({
+        title: 'Redaction Complete',
+        description: `Permanently redacted ${entitiesToRedact.length} items`,
+        duration: 3000,
+      });
+    } else {
+      // For reversible mode, use redactText with self-healing
+      const { redactedText, redactionMap } = redactText(
+        inputText,
+        entitiesToRedact,
+        deterministic
+      );
+      
+      setRedactionMap(redactionMap);
+      setRedactedText(redactedText);
+      toast({
+        title: 'Redaction Complete',
+        description: `Redacted ${entitiesToRedact.length} items`,
+        duration: 3000,
+      });
     }
-    setRedactedText(result);
-    toast({
-      title: 'Redaction Complete',
-      description: irreversible 
-        ? `Permanently redacted ${entitiesToRedact.length} items`
-        : `Redacted ${entitiesToRedact.length} items`,
-      duration: 3000,
-    });
   };
 
   const handleUnredact = () => {

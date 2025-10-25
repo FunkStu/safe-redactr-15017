@@ -1,62 +1,48 @@
 import type { Entity } from './types';
 
 /**
- * Attempts to rescue a misaligned span by searching in a small window around the expected position.
- * Returns corrected start/end if found, null otherwise.
- */
-export function rescueSpan(
-  doc: string,
-  e: { start: number; end: number; text: string },
-  windowSize = 96
-): { start: number; end: number } | null {
-  // If exact match already, keep it
-  if (doc.slice(e.start, e.end) === e.text) {
-    return { start: e.start, end: e.end };
-  }
-
-  // Search a small neighborhood around the expected start
-  const left = Math.max(0, e.start - windowSize);
-  const right = Math.min(doc.length, e.end + windowSize);
-  const hood = doc.slice(left, right);
-  const idx = hood.indexOf(e.text);
-  
-  if (idx >= 0) {
-    const start = left + idx;
-    const end = start + e.text.length;
-    return { start, end };
-  }
-  
-  return null;
-}
-
-/**
- * Redacts text by replacing entities with placeholders, using self-healing span rescue.
- * Entities MUST be sorted in descending order by start position.
+ * Redacts text by replacing entities with placeholders in descending order.
+ * Includes self-healing span rescue for misaligned positions.
  */
 export function redactText(
   text: string,
   entities: Entity[],
-  getPlaceholder: (entity: Entity) => string
-): string {
-  let output = text;
-  
-  // Process in descending order to maintain correct indices
-  for (const e of entities) {
-    // Attempt to rescue the span if it doesn't match exactly
-    const fixed = rescueSpan(output, { start: e.start, end: e.end, text: e.text }, 96);
-    const start = fixed ? fixed.start : e.start;
-    const end = fixed ? fixed.end : e.end;
+  deterministic = true
+): { redactedText: string; redactionMap: Map<string, string> } {
+  if (!entities?.length) return { redactedText: text, redactionMap: new Map() };
 
-    // Sanity check — if still inconsistent, skip (don't corrupt text)
-    if (output.slice(start, end) !== e.text) {
-      console.warn('Span mismatch; skipping entity:', e);
-      continue;
+  // 1️⃣ Deduplicate and sort in descending order (highest start first)
+  const unique = entities.filter(
+    (e, i, arr) => i === arr.findIndex(x => x.start === e.start && x.end === e.end)
+  );
+  const sorted = [...unique].sort((a, b) => b.start - a.start);
+
+  // 2️⃣ Prepare output and mapping
+  let output = text;
+  const map = new Map<string, string>();
+
+  // 3️⃣ Replace in descending order to avoid index drift
+  for (const e of sorted) {
+    // verify entity text still matches expected slice
+    const spanText = output.slice(e.start, e.end);
+    if (!spanText || !e.text || spanText.trim() !== e.text.trim()) {
+      // optional safety rescue if needed:
+      const i = output.indexOf(e.text);
+      if (i === -1) continue;
+      e.start = i;
+      e.end = i + e.text.length;
     }
 
-    // Now safe to replace by indices
-    const placeholder = getPlaceholder(e);
-    output = output.slice(0, start) + placeholder + output.slice(end);
+    const token = deterministic
+      ? `${e.label}_${btoa(e.text).slice(0, 6).toUpperCase()}`
+      : `${e.label}_${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+    map.set(token, e.text);
+    output =
+      output.slice(0, e.start) +
+      `[${token}]` +
+      output.slice(e.end);
   }
-  
-  return output;
+
+  return { redactedText: output, redactionMap: map };
 }
