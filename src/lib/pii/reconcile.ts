@@ -95,12 +95,11 @@ export function reconcile(entities: Entity[]): Entity[] {
     return true;
   });
 
-  // Remove PERSON entities that are substrings of longer PERSON entities
-  const dedupedPersons = filtered.filter(e => {
-    if (e.label !== 'PERSON') return true;
+  // Remove entities that are substrings of longer entities with the SAME label
+  const dedupedBySubstring = filtered.filter(e => {
     const eText = e.text.toLowerCase();
     return !filtered.some(o => 
-      o.label === 'PERSON' && 
+      o.label === e.label &&  // Only drop if same label
       o !== e && 
       o.text.toLowerCase().includes(eText) &&
       o.text.length > e.text.length
@@ -108,7 +107,7 @@ export function reconcile(entities: Entity[]): Entity[] {
   });
 
   // Collapse multi-part addresses (e.g., "Osborne Road" + "Marrickville NSW" → one entity)
-  const collapsed = [...dedupedPersons];
+  const collapsed = [...dedupedBySubstring];
   for (let i = 1; i < collapsed.length; i++) {
     const prev = collapsed[i - 1];
     const cur = collapsed[i];
