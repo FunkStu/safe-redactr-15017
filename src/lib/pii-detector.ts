@@ -265,35 +265,38 @@ export class BrowserPIIDetector {
 
 
   private async detectNER(text: string): Promise<Entity[]> {
-    const piiEntities = await this.detectPII(text);
-    return piiEntities.map(e => ({
-      text: e.text,
-      label: this.mapPIILabelToEntity(e.label),
-      start: e.start,
-      end: e.end,
-      score: e.score,
+    if (!this.classifier) {
+      await this.initialize();
+    }
+    
+    // Call model directly with simple aggregation to merge tokens
+    const raw = await this.classifier(text, { 
+      aggregation_strategy: 'simple' 
+    });
+    
+    // Map raw model output to Entity format
+    return raw.map((r: any) => ({
+      text: r.word || r.text || '',
+      label: this.mapNERLabelToEntity(r.entity_group || r.entity || 'MISC'),
+      start: r.start ?? 0,
+      end: r.end ?? 0,
+      score: r.score ?? 0,
       source: 'model' as const
     }));
   }
 
-  private mapPIILabelToEntity(label: string): Entity['label'] {
+  private mapNERLabelToEntity(label: string): Entity['label'] {
+    // Map NER labels (PER, LOC, ORG, MISC) to our Entity label types
     const mapping: Record<string, Entity['label']> = {
-      'Person Name': 'PERSON',
-      'Location': 'LOC',
-      'Organization': 'ORG',
-      'Address': 'ADDRESS',
-      'Email': 'EMAIL',
-      'Phone Number': 'PHONE',
-      'Credit Card': 'CREDIT_CARD',
-      'Date of Birth': 'DOB',
-      'ABN': 'ABN',
-      'TFN': 'TFN',
-      'Medicare Number': 'MEDICARE',
-      'AFSL Number': 'AFSL',
-      'AR Number': 'AR',
-      'Bank Account': 'BANK_ACCT'
+      'PER': 'PERSON',
+      'PERSON': 'PERSON',
+      'LOC': 'LOC',
+      'LOCATION': 'LOC',
+      'ORG': 'ORG',
+      'ORGANIZATION': 'ORG',
+      'MISC': 'PERSON', // Default misc to person for now
     };
-    return mapping[label] || 'PERSON';
+    return mapping[label.toUpperCase()] || 'PERSON';
   }
 
   async detectAll(text: string): Promise<Entity[]> {
