@@ -128,5 +128,18 @@ export function reconcile(entities: Entity[]): Entity[] {
     }
   }
 
-  return unique;
+  // Merge overlapping ORG fragments into single clean entities
+  const merged: Entity[] = [];
+  for (const e of unique) {
+    const prev = merged.at(-1);
+    if (prev && prev.label === 'ORG' && e.label === 'ORG' && e.start <= prev.end + 3) {
+      // Extend previous ORG to include this one
+      prev.end = e.end;
+      prev.text = prev.text + ' ' + e.text; // Concatenate text
+    } else {
+      merged.push(e);
+    }
+  }
+
+  return merged;
 }

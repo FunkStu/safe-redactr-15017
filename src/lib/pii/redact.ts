@@ -23,14 +23,19 @@ export function redactText(
 
   // 3️⃣ Replace in descending order to avoid index drift
   for (const e of sorted) {
-    // verify entity text still matches expected slice
-    const spanText = output.slice(e.start, e.end);
-    if (!spanText || !e.text || spanText.trim() !== e.text.trim()) {
-      // optional safety rescue if needed:
-      const i = output.indexOf(e.text);
-      if (i === -1) continue;
-      e.start = i;
-      e.end = i + e.text.length;
+    // ✅ tolerant span alignment with fuzzy matching
+    let start = e.start;
+    let end = e.end;
+    const window = 64;
+    const snippet = output.slice(Math.max(0, start - window), Math.min(output.length, end + window));
+    const local = snippet.indexOf(e.text);
+    
+    if (local !== -1) {
+      start = Math.max(0, start - window) + local;
+      end = start + e.text.length;
+    } else if (output.slice(start, end).trim() !== e.text.trim()) {
+      console.warn('Skipping unmatched entity:', e.text);
+      continue;
     }
 
     const token = deterministic
@@ -39,10 +44,11 @@ export function redactText(
 
     map.set(token, e.text);
     output =
-      output.slice(0, e.start) +
+      output.slice(0, start) +
       `[${token}]` +
-      output.slice(e.end);
+      output.slice(end);
   }
 
+  console.log('Redacted entities used:', Array.from(map.entries()));
   return { redactedText: output, redactionMap: map };
 }
