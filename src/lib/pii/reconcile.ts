@@ -2,11 +2,11 @@ import type { Entity } from './types';
 
 const labelMap: Record<string,string> = {
   PER: 'PERSON',
-  LOC: 'ADDRESS',
-  ORG: 'ORG',
-  MISC: 'ORG',
   PERSON: 'PERSON',
+  ORG: 'ORG',
   ORGANIZATION: 'ORG',
+  MISC: 'ORG',
+  LOC: 'ADDRESS',
   LOCATION: 'ADDRESS',
 };
 
@@ -48,12 +48,30 @@ export function reconcile(entities: Entity[]): Entity[] {
 
   const out: Entity[] = [];
   for (const e of norm) {
-    const i = out.findIndex(o => !(e.end <= o.start || e.start >= o.end));
-    if (i === -1) { out.push(e); continue; }
-    const o = out[i];
-    if (e.source==='regex' && o.source==='model') out[i] = e; // regex wins
+    let replaced = false;
+    for (let i = 0; i < out.length; i++) {
+      const o = out[i];
+      const overlap = Math.max(0, Math.min(e.end, o.end) - Math.max(e.start, o.start));
+      const minSpan = Math.min(e.end - e.start, o.end - o.start);
+      const iouLike = overlap / Math.max(1, minSpan);
+
+      // Rule A: Keep both if small/partial overlap (prevents wiping PERSON by ORG/ADDR)
+      if (iouLike < 0.4) continue;
+
+      // Rule B: If labels differ and one is PERSON with >= 2 tokens, keep PERSON too
+      const eTokens = e.text.trim().split(/\s+/).length;
+      const oTokens = o.text.trim().split(/\s+/).length;
+      if (e.label !== o.label && (e.label === 'PERSON' && eTokens >= 2)) continue;
+      if (e.label !== o.label && (o.label === 'PERSON' && oTokens >= 2)) continue;
+
+      // Rule C: When conflict remains, prefer regex-validated structured over model; else higher score
+      const eWins = (e.source === 'regex' && o.source === 'model') || ((e.score ?? 0) > (o.score ?? 0));
+      if (eWins) { out[i] = e; replaced = true; break; } else { replaced = true; break; }
+    }
+    if (!replaced) out.push(e);
   }
 
+  // Final de-dupe by span+label+text
   const seen = new Set<string>();
   return out.filter(e => {
     const k = `${e.start}:${e.end}:${e.label}:${e.text.toLowerCase()}`;
