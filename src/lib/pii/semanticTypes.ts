@@ -1,4 +1,7 @@
-export type Label = 'PERSON' | 'ADDRESS' | 'ORG' | 'DOB' | 'PHONE' | 'EMAIL' | 'OTHER';
+export type Label =
+  | 'PERSON' | 'ORG' | 'LOC' | 'ADDRESS'
+  | 'ABN' | 'TFN' | 'MEDICARE' | 'AFSL' | 'AR'
+  | 'EMAIL' | 'PHONE' | 'CREDIT_CARD' | 'BSB' | 'BANK_ACCT' | 'DOB' | 'OTHER';
 
 export interface Entity {
   label: Label;

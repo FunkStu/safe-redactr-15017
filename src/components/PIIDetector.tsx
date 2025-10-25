@@ -9,13 +9,18 @@ import { BrowserPIIDetector } from '@/lib/pii-detector';
 import type { Entity } from '@/lib/pii/types';
 import { encryptJSON, decryptJSON } from '@/lib/pii/crypto';
 import { makePlaceholder } from '@/lib/pii/placeholders';
-import { redactText } from '@/lib/pii/redact';
+// import { redactText } from '@/lib/pii/redact'; // Old index-based redactor
+import { redactTextSemantic } from '@/lib/pii/semanticRedact';
+import type { RedactionMap as SemanticRedactionMap } from '@/lib/pii/semanticTypes';
 import { Download, Upload, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
 import { ComplianceDialog } from '@/components/ComplianceDialog';
 import { AccuracyDisclaimer } from '@/components/AccuracyDisclaimer';
 import { TermsOfUse } from '@/components/TermsOfUse';
 
 export function PIIDetector() {
+  // 🔧 Toggle for testing semantic vs old redactor
+  const useSemantic = true;
+
   const [inputText, setInputText] = useState('');
   const [detectedEntities, setDetectedEntities] = useState<Entity[]>([]);
   const [isDetecting, setIsDetecting] = useState(false);
@@ -23,7 +28,8 @@ export function PIIDetector() {
   const [initProgress, setInitProgress] = useState(0);
   const [redactedText, setRedactedText] = useState('');
   const [selectedEntities, setSelectedEntities] = useState<Set<number>>(new Set());
-  const [redactionMap, setRedactionMap] = useState<Map<string, string>>(new Map());
+  const [redactionMap, setRedactionMap] = useState<SemanticRedactionMap>({}); // Use semantic map by default
+  const [legacyRedactionMap, setLegacyRedactionMap] = useState<Map<string, string>>(new Map()); // For old redactor fallback
   const [selectedText, setSelectedText] = useState('');
   const [selectionStart, setSelectionStart] = useState(0);
   const [selectionEnd, setSelectionEnd] = useState(0);
@@ -119,7 +125,7 @@ export function PIIDetector() {
     if (irreversible) {
       // For irreversible mode, use simple placeholder replacement
       let result = inputText;
-      const sorted = [...entitiesToRedact].sort((a, b) => b.start - a.start);
+      const sorted = [...entitiesToRedact].sort((a, b) => b.start! - a.start!);
       
       sorted.forEach((entity) => {
         const placeholder = `[REDACTED_${entity.label}]`;
@@ -133,15 +139,26 @@ export function PIIDetector() {
         duration: 3000,
       });
     } else {
-      // For reversible mode, use redactText with self-healing
-      const { redactedText, redactionMap } = redactText(
-        inputText,
-        entitiesToRedact,
-        deterministic
-      );
-      
-      setRedactionMap(redactionMap);
-      setRedactedText(redactedText);
+      // 🔧 Conditional: semantic vs old redactor
+      let redactedResult: string;
+      let redactionMapResult: Map<string, string> | SemanticRedactionMap;
+
+      if (useSemantic) {
+        const { redacted, map } = redactTextSemantic(inputText, entitiesToRedact, {
+          redactPersonFirstLast: true,
+          embedFrontMatter: true,
+          caseInsensitive: true,
+        });
+        redactedResult = redacted;
+        redactionMapResult = map;
+        console.log('🗺️ Semantic Redaction Map:', map);
+      } else {
+        // Old index-based redactor (disabled for now)
+        throw new Error('Old redactor disabled - enable useSemantic=false and uncomment redactText import');
+      }
+
+      setRedactionMap(redactionMapResult);
+      setRedactedText(redactedResult);
       toast({
         title: 'Redaction Complete',
         description: `Redacted ${entitiesToRedact.length} items`,
@@ -151,17 +168,45 @@ export function PIIDetector() {
   };
 
   const handleUnredact = () => {
-    let result = redactedText;
-    redactionMap.forEach((originalText, placeholder) => {
-      result = result.split(placeholder).join(originalText);
-    });
-    
-    setRedactedText(result);
-    toast({
-      title: 'Unredaction Complete',
-      description: `Restored ${redactionMap.size} items`,
-      duration: 3000,
-    });
+    if (useSemantic) {
+      // Semantic unredaction uses the map stored in redactionMap (Record format)
+      let result = redactedText;
+      Object.entries(redactionMap).forEach(([key, entry]) => {
+        // Replace all variants: [LABEL_ID:FULL], [LABEL_ID:FIRST], [LABEL_ID:LAST]
+        const fullPattern = `[${key}:FULL]`;
+        result = result.split(fullPattern).join(entry.full);
+        
+        if ('first' in entry) {
+          const firstPattern = `[${key}:FIRST]`;
+          result = result.split(firstPattern).join(entry.first);
+        }
+        
+        if ('last' in entry) {
+          const lastPattern = `[${key}:LAST]`;
+          result = result.split(lastPattern).join(entry.last);
+        }
+      });
+      
+      setRedactedText(result);
+      toast({
+        title: 'Unredaction Complete',
+        description: `Restored ${Object.keys(redactionMap).length} items`,
+        duration: 3000,
+      });
+    } else {
+      // Legacy unredaction
+      let result = redactedText;
+      legacyRedactionMap.forEach((originalText, placeholder) => {
+        result = result.split(placeholder).join(originalText);
+      });
+      
+      setRedactedText(result);
+      toast({
+        title: 'Unredaction Complete',
+        description: `Restored ${legacyRedactionMap.size} items`,
+        duration: 3000,
+      });
+    }
   };
 
   const handleTextSelection = () => {
@@ -189,11 +234,18 @@ export function PIIDetector() {
       return;
     }
 
-    const manualIndex = redactionMap.size + 1;
+    const manualIndex = Object.keys(redactionMap).length + 1;
     const placeholder = `[REDACTED_MANUAL_${String(manualIndex).padStart(3, '0')}]`;
     
-    const newRedactionMap = new Map(redactionMap);
-    newRedactionMap.set(placeholder, selectedText);
+    // For semantic mode, add to redactionMap Record
+    const newRedactionMap = { 
+      ...redactionMap,
+      [`MANUAL_${manualIndex}`]: {
+        label: 'OTHER' as const,
+        full: selectedText,
+        canonical: selectedText.toLowerCase(),
+      }
+    };
     
     const newRedactedText = 
       redactedText.substring(0, selectionStart) + 
@@ -223,7 +275,7 @@ export function PIIDetector() {
   };
 
   const handleExportMapping = () => {
-    if (redactionMap.size === 0) {
+    if (Object.keys(redactionMap).length === 0) {
       toast({
         title: 'No Mapping',
         description: 'No redaction mapping available to export',
@@ -233,9 +285,10 @@ export function PIIDetector() {
     }
 
     const mappingData = {
-      version: '1.0',
+      version: '2.0',
+      mode: 'semantic',
       timestamp: new Date().toISOString(),
-      mapping: Object.fromEntries(redactionMap),
+      mapping: redactionMap,
     };
 
     const blob = new Blob([JSON.stringify(mappingData, null, 2)], { type: 'application/json' });
@@ -250,7 +303,7 @@ export function PIIDetector() {
 
     toast({
       title: 'Mapping Exported',
-      description: 'Redaction mapping saved securely',
+      description: 'Semantic redaction mapping saved securely',
       duration: 3000,
     });
   };
@@ -310,34 +363,41 @@ export function PIIDetector() {
           throw new Error('Invalid mapping format');
         }
 
-        // Sanitize and validate each entry
-        const validatedMap = new Map<string, string>();
+        // Sanitize and validate each entry - convert to semantic format
+        const validatedMap: SemanticRedactionMap = {};
         let invalidCount = 0;
 
         Object.entries(data.mapping).forEach(([key, value]) => {
           if (typeof key === 'string' && typeof value === 'string') {
-            // Limit length and trim
+            // Legacy format - convert to semantic
             const sanitizedKey = key.substring(0, 500).trim();
             const sanitizedValue = value.substring(0, 1000).trim();
             
             if (sanitizedKey && sanitizedValue) {
-              validatedMap.set(sanitizedKey, sanitizedValue);
+              validatedMap[sanitizedKey] = {
+                label: 'OTHER',
+                full: sanitizedValue,
+                canonical: sanitizedValue.toLowerCase(),
+              };
             } else {
               invalidCount++;
             }
+          } else if (typeof key === 'string' && typeof value === 'object') {
+            // Semantic format - validate and use directly
+            validatedMap[key] = value as any;
           } else {
             invalidCount++;
           }
         });
 
-        if (validatedMap.size === 0) {
+        if (Object.keys(validatedMap).length === 0) {
           throw new Error('No valid mappings found');
         }
 
         setRedactionMap(validatedMap);
         toast({
           title: 'Mapping Imported',
-          description: `Loaded ${validatedMap.size} mappings${invalidCount > 0 ? ` (${invalidCount} invalid skipped)` : ''}`,
+          description: `Loaded ${Object.keys(validatedMap).length} mappings${invalidCount > 0 ? ` (${invalidCount} invalid skipped)` : ''}`,
           duration: 3000,
         });
       } catch (error) {
@@ -371,7 +431,7 @@ export function PIIDetector() {
       return;
     }
     
-    if (redactionMap.size === 0) {
+    if (Object.keys(redactionMap).length === 0) {
       toast({
         title: 'No Mapping',
         description: 'No redaction mapping available to export',
@@ -385,9 +445,10 @@ export function PIIDetector() {
     
     try {
       const mappingData = {
-        version: '1.0',
+        version: '2.0',
+        mode: 'semantic',
         timestamp: new Date().toISOString(),
-        mapping: Object.fromEntries(redactionMap),
+        mapping: redactionMap,
       };
       
       const blob = await encryptJSON(mappingData, pass);
@@ -435,21 +496,28 @@ export function PIIDetector() {
         throw new Error('Invalid mapping format');
       }
       
-      const validatedMap = new Map<string, string>();
+      const validatedMap: SemanticRedactionMap = {};
       Object.entries(mappingData.mapping).forEach(([key, value]) => {
-        if (typeof key === 'string' && typeof value === 'string') {
-          validatedMap.set(key, value);
+        if (typeof key === 'string' && typeof value === 'object') {
+          validatedMap[key] = value as any;
+        } else if (typeof key === 'string' && typeof value === 'string') {
+          // Legacy format support
+          validatedMap[key] = {
+            label: 'OTHER',
+            full: value,
+            canonical: value.toLowerCase(),
+          };
         }
       });
       
-      if (validatedMap.size === 0) {
+      if (Object.keys(validatedMap).length === 0) {
         throw new Error('No valid mappings found');
       }
       
       setRedactionMap(validatedMap);
       toast({
         title: 'Encrypted Mapping Imported',
-        description: `Loaded ${validatedMap.size} mappings`,
+        description: `Loaded ${Object.keys(validatedMap).length} mappings`,
         duration: 3000,
       });
     } catch (error) {
@@ -743,17 +811,28 @@ export function PIIDetector() {
             >
               {isDetecting ? 'Detecting PII...' : 'Detect PII'}
             </Button>
-            {redactionMap.size > 0 && inputText.trim() && (
+            {Object.keys(redactionMap).length > 0 && inputText.trim() && (
               <Button 
                 onClick={() => {
                   let result = inputText;
-                  redactionMap.forEach((originalText, placeholder) => {
-                    result = result.split(placeholder).join(originalText);
+                  Object.entries(redactionMap).forEach(([key, entry]) => {
+                    const fullPattern = `[${key}:FULL]`;
+                    result = result.split(fullPattern).join(entry.full);
+                    
+                    if ('first' in entry) {
+                      const firstPattern = `[${key}:FIRST]`;
+                      result = result.split(firstPattern).join(entry.first);
+                    }
+                    
+                    if ('last' in entry) {
+                      const lastPattern = `[${key}:LAST]`;
+                      result = result.split(lastPattern).join(entry.last);
+                    }
                   });
                   setRedactedText(result);
                   toast({
                     title: 'Unredaction Complete',
-                    description: `Restored ${redactionMap.size} items - check output below`,
+                    description: `Restored ${Object.keys(redactionMap).length} items - check output below`,
                     duration: 3000,
                   });
                 }}
@@ -870,7 +949,7 @@ export function PIIDetector() {
                     <Download className="h-4 w-4 mr-2" />
                     Copy Text
                   </Button>
-                  {redactionMap.size > 0 && (
+                  {Object.keys(redactionMap).length > 0 && (
                     <>
                       <Button onClick={handleExportMapping} className="flex-1" variant="outline">
                         <Download className="h-4 w-4 mr-2" />
