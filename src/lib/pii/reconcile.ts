@@ -141,5 +141,24 @@ export function reconcile(entities: Entity[]): Entity[] {
     }
   }
 
-  return merged;
+  // --- AUTO-GENERATE SYNTHETIC FIRST & LAST PERSON ENTITIES ---
+  const expanded: Entity[] = [];
+  for (const e of merged) {
+    expanded.push(e);
+    if (e.label === 'PERSON') {
+      const parts = e.text.trim().split(/\s+/);
+      if (parts.length > 1) {
+        const [first, ...rest] = parts;
+        const last = rest.join(' ');
+        // Add synthetic standalone PERSON tokens if they differ from full name
+        if (first && first.toLowerCase() !== e.text.toLowerCase())
+          expanded.push({ label: 'PERSON', text: first, start: 0, end: 0, source: e.source });
+        if (last && last.toLowerCase() !== e.text.toLowerCase())
+          expanded.push({ label: 'PERSON', text: last, start: 0, end: 0, source: e.source });
+      }
+    }
+  }
+  // -------------------------------------------------------------
+
+  return expanded;
 }
