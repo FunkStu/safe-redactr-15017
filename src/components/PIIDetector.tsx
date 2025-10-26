@@ -13,7 +13,7 @@ import { makePlaceholder } from '@/lib/pii/placeholders';
 // import { redactText } from '@/lib/pii/redact'; // Old index-based redactor
 import { redactTextSemantic } from '@/lib/pii/semanticRedact';
 import type { RedactionMap as SemanticRedactionMap } from '@/lib/pii/semanticTypes';
-import { Download, Upload, AlertCircle, CheckCircle2, Sparkles, Info } from 'lucide-react';
+import { Download, Upload, AlertCircle, CheckCircle2, Sparkles, Info, X } from 'lucide-react';
 import { AccuracyDisclaimer } from '@/components/AccuracyDisclaimer';
 import { TermsOfUse } from '@/components/TermsOfUse';
 import {
@@ -29,6 +29,7 @@ export function PIIDetector() {
   // 🔧 Toggle for testing semantic vs old redactor
   const useSemantic = true;
 
+  const [activeTab, setActiveTab] = useState('redact');
   const [inputText, setInputText] = useState('');
   const [detectedEntities, setDetectedEntities] = useState<Entity[]>([]);
   const [isDetecting, setIsDetecting] = useState(false);
@@ -46,6 +47,13 @@ export function PIIDetector() {
   const detectorRef = useRef<BrowserPIIDetector | null>(null);
   const redactedTextareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
+
+  // Clear input text when switching to unredact tab
+  useEffect(() => {
+    if (activeTab === 'unredact') {
+      setInputText('');
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     detectorRef.current = new BrowserPIIDetector();
@@ -781,7 +789,7 @@ export function PIIDetector() {
           )}
 
           {initProgress > 0 && !isInitializing && (
-            <Tabs defaultValue="redact" className="mt-6">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="redact">Redaction</TabsTrigger>
                 <TabsTrigger value="unredact">Unredaction</TabsTrigger>
@@ -828,21 +836,37 @@ export function PIIDetector() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <label className="text-sm font-medium">Input Text</label>
-                        <label htmlFor="file-upload">
-                          <Button variant="outline" size="sm" asChild>
-                            <span className="cursor-pointer flex items-center gap-2">
-                              <Upload className="h-4 w-4" />
-                              Upload File
-                            </span>
-                          </Button>
-                          <input
-                            id="file-upload"
-                            type="file"
-                            accept=".txt"
-                            className="hidden"
-                            onChange={handleFileUpload}
-                          />
-                        </label>
+                        <div className="flex gap-2">
+                          {inputText && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => {
+                                setInputText('');
+                                setDetectedEntities([]);
+                                setSelectedEntities(new Set());
+                                setRedactedText('');
+                              }}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <label htmlFor="file-upload">
+                            <Button variant="outline" size="sm" asChild>
+                              <span className="cursor-pointer flex items-center gap-2">
+                                <Upload className="h-4 w-4" />
+                                Upload File
+                              </span>
+                            </Button>
+                            <input
+                              id="file-upload"
+                              type="file"
+                              accept=".txt"
+                              className="hidden"
+                              onChange={handleFileUpload}
+                            />
+                          </label>
+                        </div>
                       </div>
                       <Textarea
                         value={inputText}
@@ -1031,7 +1055,21 @@ export function PIIDetector() {
                     </div>
 
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Redacted Text Input</label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium">Redacted Text Input</label>
+                        {inputText && (
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => {
+                              setInputText('');
+                              setRedactedText('');
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                       <Textarea
                         value={inputText}
                         onChange={(e) => setInputText(e.target.value)}
