@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { BrowserPIIDetector } from '@/lib/pii-detector';
 import type { Entity } from '@/lib/pii/types';
@@ -12,10 +13,17 @@ import { makePlaceholder } from '@/lib/pii/placeholders';
 // import { redactText } from '@/lib/pii/redact'; // Old index-based redactor
 import { redactTextSemantic } from '@/lib/pii/semanticRedact';
 import type { RedactionMap as SemanticRedactionMap } from '@/lib/pii/semanticTypes';
-import { Download, Upload, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
-import { ComplianceDialog } from '@/components/ComplianceDialog';
+import { Download, Upload, AlertCircle, CheckCircle2, Sparkles, Info } from 'lucide-react';
 import { AccuracyDisclaimer } from '@/components/AccuracyDisclaimer';
 import { TermsOfUse } from '@/components/TermsOfUse';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export function PIIDetector() {
   // 🔧 Toggle for testing semantic vs old redactor
@@ -640,8 +648,59 @@ export function PIIDetector() {
     return colors[label] || 'bg-gray-500';
   };
 
+  const complianceData = [
+    {
+      requirement: "APP 1 - Open and transparent management",
+      function: "Clear privacy notice displayed upfront: '100% local processing - no data leaves your browser'. Users understand data handling before use."
+    },
+    {
+      requirement: "APP 3 - Collection of solicited personal information",
+      function: "No data collection occurs. All processing happens client-side in the browser. No servers receive, store, or collect any personal information."
+    },
+    {
+      requirement: "APP 6 - Use or disclosure of personal information",
+      function: "Zero data transmission to external parties. All PII remains in user's browser memory only. No APIs, databases, or third-party services receive data."
+    },
+    {
+      requirement: "APP 8 - Cross-border disclosure",
+      function: "Perfect compliance - zero cross-border data flows. No overseas transfers, cloud storage, or international API calls. Data never leaves user's device, eliminating all transborder data flow obligations and foreign jurisdiction risks."
+    },
+    {
+      requirement: "APP 9 - Government related identifiers",
+      function: "Tool detects government identifiers (ABN, TFN, Medicare) for redaction purposes only. Does not adopt, use, or disclose these identifiers as customer/user identifiers. Detection ≠ adoption—no database keys, no tracking, no identifier reuse. Compliant with APP 9.1 prohibition."
+    },
+    {
+      requirement: "APP 11 - Security of personal information",
+      function: "Maximum security through local-only processing. Data never leaves device, eliminating network transmission risks. WebGPU/CPU processing ensures data stays in browser sandbox."
+    },
+    {
+      requirement: "APP 11.2 - Destruction or de-identification",
+      function: "Bidirectional redaction/restoration system with SHA-256 checksums ensures data integrity. Users can permanently redact or restore PII as needed. Data destroyed when browser session ends."
+    },
+    {
+      requirement: "Notifiable Data Breaches (NDB) scheme",
+      function: "Zero breach risk - no data transmission means no data breach possible. Local processing architecture eliminates notification obligations under Privacy Act s26WE."
+    },
+    {
+      requirement: "Financial sector specific - APRA CPS 234",
+      function: "Exceeds information security requirements through zero-trust architecture. No external dependencies, API keys, or cloud services reduce attack surface to zero."
+    },
+    {
+      requirement: "Banking Code of Practice - Privacy obligations",
+      function: "Enables financial institutions to review documents containing customer PII without transmitting data to external processors, maintaining data sovereignty."
+    },
+    {
+      requirement: "AML/CTF Act - Record keeping (s107)",
+      function: "Supports compliant document sanitization for required record retention. Allows redaction of PII from audit trails while maintaining document utility."
+    },
+    {
+      requirement: "Consumer Data Right (CDR) - Data security",
+      function: "Local processing ensures CDR data (banking, energy records) can be analyzed without CDR Data Recipient obligations. No data sharing equals no CDR accreditation requirements."
+    }
+  ];
+
   return (
-    <div className="container mx-auto p-6 max-w-7xl space-y-6">
+    <div className="container mx-auto p-6 max-w-7xl">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -651,7 +710,7 @@ export function PIIDetector() {
                 <CardTitle>AI Powered PII Redactr</CardTitle>
               </div>
               <CardDescription className="mt-1.5">
-                100% local processing - no data leaves your browser. Compliant with Australian financial regulations. <ComplianceDialog />
+                100% local processing - no data leaves your browser. Compliant with Australian financial regulations.
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -693,7 +752,7 @@ export function PIIDetector() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent>
           {!isInitializing && initProgress === 0 && (
             <div className="flex items-center gap-4 p-4 border rounded-lg bg-muted/50">
               <AlertCircle className="h-5 w-5 text-muted-foreground" />
@@ -715,297 +774,437 @@ export function PIIDetector() {
           )}
 
           {initProgress > 0 && !isInitializing && (
-            <>
-              <div className="flex items-center gap-2 p-3 border rounded-lg bg-green-50 dark:bg-green-950">
-                <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
-                <p className="text-sm font-medium text-green-600 dark:text-green-400">AI Model Ready</p>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-6 p-4 border rounded-lg bg-muted/30">
-                <div className="space-y-2">
-                  <h3 className="font-semibold text-sm">To Redact</h3>
-                  <ol className="text-sm space-y-1 text-muted-foreground list-decimal list-inside">
-                    <li>Paste text or upload your file</li>
-                    <li>Click Redact PII</li>
-                    <li>Check output and manually redact as needed</li>
-                    <li>Export Mapping and store safely</li>
-                  </ol>
-                </div>
-                <div className="space-y-2">
-                  <h3 className="font-semibold text-sm">To Unredact</h3>
-                  <ol className="text-sm space-y-1 text-muted-foreground list-decimal list-inside">
-                    <li>Import previous mapping</li>
-                    <li>Paste redacted text</li>
-                    <li>Check output</li>
-                  </ol>
-                </div>
-              </div>
-            </>
+            <div className="flex items-center gap-2 p-3 border rounded-lg bg-green-50 dark:bg-green-950">
+              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+              <p className="text-sm font-medium text-green-600 dark:text-green-400">AI Model Ready</p>
+            </div>
           )}
 
           {initProgress > 0 && !isInitializing && (
-            <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
-              <h3 className="font-semibold text-sm">Redaction Settings</h3>
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={irreversible} 
-                    onChange={e => setIrreversible(e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
-                  <span>Irreversible redaction (no mapping; permanent)</span>
-                </label>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={deterministic} 
-                    onChange={e => setDeterministic(e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-300"
-                    disabled={irreversible}
-                  />
-                  <span className={irreversible ? 'text-muted-foreground' : ''}>
-                    Deterministic placeholders (same value → same token)
-                  </span>
-                </label>
-              </div>
-            </div>
+            <Tabs defaultValue="redact" className="mt-6">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="redact">Redaction</TabsTrigger>
+                <TabsTrigger value="unredact">Unredaction</TabsTrigger>
+                <TabsTrigger value="info">How It Works</TabsTrigger>
+              </TabsList>
+
+              {/* REDACTION TAB */}
+              <TabsContent value="redact" className="space-y-6 mt-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Redact PII</CardTitle>
+                    <CardDescription>
+                      Upload or paste text to detect and redact personally identifiable information
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+                      <h3 className="font-semibold text-sm">Redaction Settings</h3>
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={irreversible} 
+                            onChange={e => setIrreversible(e.target.checked)}
+                            className="h-4 w-4 rounded border-gray-300"
+                          />
+                          <span>Irreversible redaction (no mapping; permanent)</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={deterministic} 
+                            onChange={e => setDeterministic(e.target.checked)}
+                            className="h-4 w-4 rounded border-gray-300"
+                            disabled={irreversible}
+                          />
+                          <span className={irreversible ? 'text-muted-foreground' : ''}>
+                            Deterministic placeholders (same value → same token)
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium">Input Text</label>
+                        <label htmlFor="file-upload">
+                          <Button variant="outline" size="sm" asChild>
+                            <span className="cursor-pointer flex items-center gap-2">
+                              <Upload className="h-4 w-4" />
+                              Upload File
+                            </span>
+                          </Button>
+                          <input
+                            id="file-upload"
+                            type="file"
+                            accept=".txt"
+                            className="hidden"
+                            onChange={handleFileUpload}
+                          />
+                        </label>
+                      </div>
+                      <Textarea
+                        value={inputText}
+                        onChange={(e) => setInputText(e.target.value)}
+                        placeholder="Paste or type text containing potential PII..."
+                        className="min-h-[200px] font-mono text-sm"
+                      />
+                    </div>
+
+                    <Button 
+                      onClick={handleDetect} 
+                      disabled={!inputText.trim() || isDetecting}
+                      className="w-full bg-[#003878] hover:bg-[#003878]/90 text-white"
+                    >
+                      {isDetecting ? 'Detecting PII...' : 'Detect PII'}
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {detectedEntities.length > 0 && (
+                  <>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Detected PII ({detectedEntities.length} items)</CardTitle>
+                        <CardDescription>
+                          Review and select items to redact. AI-detected items are marked with confidence scores.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                          {detectedEntities.map((entity, index) => (
+                            <div
+                              key={index}
+                              onClick={() => toggleEntity(index)}
+                              className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-colors ${
+                                selectedEntities.has(index) 
+                                  ? 'bg-primary/10 border-primary' 
+                                  : 'hover:bg-muted/50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedEntities.has(index)}
+                                  onChange={() => toggleEntity(index)}
+                                  className="h-4 w-4"
+                                />
+                                <Badge className={getLabelColor(entity.label)}>
+                                  {entity.label}
+                                </Badge>
+                                <code className="text-sm bg-muted px-2 py-1 rounded">
+                                  {entity.text}
+                                </code>
+                              </div>
+                              {entity.score !== undefined && entity.score < 1 && (
+                                <span className="text-xs text-muted-foreground">
+                                  {Math.round(entity.score * 100)}% confidence
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-4 flex gap-2">
+                          <Button onClick={handleRedact} className="flex-1">
+                            Redact Selected ({selectedEntities.size})
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            onClick={() => setSelectedEntities(new Set(detectedEntities.map((_, i) => i)))}
+                          >
+                            Select All
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            onClick={() => setSelectedEntities(new Set())}
+                          >
+                            Clear All
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {redactedText && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Redacted Output</CardTitle>
+                          <CardDescription>
+                            Review and export your redacted text
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <AccuracyDisclaimer />
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <label className="text-sm font-medium">Redacted Text</label>
+                              {selectedText && (
+                                <Badge variant="outline" className="text-xs">
+                                  {selectedText.length} characters selected
+                                </Badge>
+                              )}
+                            </div>
+                            <Textarea
+                              ref={redactedTextareaRef}
+                              value={redactedText}
+                              onChange={(e) => setRedactedText(e.target.value)}
+                              onSelect={handleTextSelection}
+                              className="min-h-[200px] font-mono text-sm"
+                            />
+                          </div>
+                          <div className="flex gap-2 flex-wrap">
+                            <Button 
+                              onClick={handleManualRedact} 
+                              variant="secondary"
+                              disabled={!selectedText || irreversible}
+                              title={irreversible ? "Manual redaction not available in irreversible mode" : ""}
+                            >
+                              Manual Redact
+                            </Button>
+                            <Button onClick={handleCopy} className="flex-1" variant="outline">
+                              <Download className="h-4 w-4 mr-2" />
+                              Copy Text
+                            </Button>
+                            {Object.keys(redactionMap).length > 0 && (
+                              <>
+                                <Button onClick={handleExportMapping} className="flex-1" variant="outline">
+                                  <Download className="h-4 w-4 mr-2" />
+                                  Export Mapping
+                                </Button>
+                                <Button onClick={handleExportEncryptedMapping} className="flex-1" variant="outline">
+                                  <Download className="h-4 w-4 mr-2" />
+                                  Export Encrypted
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </>
+                )}
+              </TabsContent>
+
+              {/* UNREDACTION TAB */}
+              <TabsContent value="unredact" className="space-y-6 mt-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Unredact Text</CardTitle>
+                    <CardDescription>
+                      Import your mapping file and paste redacted text to restore original content
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="p-4 border rounded-lg bg-muted/30">
+                      <h3 className="font-semibold text-sm mb-3">Import Mapping</h3>
+                      <div className="flex gap-2">
+                        <label htmlFor="mapping-upload-unredact" className="flex-1">
+                          <Button variant="outline" className="w-full" asChild>
+                            <span className="cursor-pointer flex items-center justify-center gap-2">
+                              <Upload className="h-4 w-4" />
+                              Import Mapping (JSON)
+                            </span>
+                          </Button>
+                          <input
+                            id="mapping-upload-unredact"
+                            type="file"
+                            accept=".json"
+                            className="hidden"
+                            onChange={handleImportMapping}
+                          />
+                        </label>
+                        <Button 
+                          onClick={handleImportEncryptedMapping} 
+                          className="flex-1" 
+                          variant="outline"
+                        >
+                          <Upload className="h-4 w-4 mr-2" />
+                          Import Encrypted
+                        </Button>
+                      </div>
+                      {Object.keys(redactionMap).length > 0 && (
+                        <div className="mt-3 flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                          <CheckCircle2 className="h-4 w-4" />
+                          <span>Mapping loaded: {Object.keys(redactionMap).length} entries</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Redacted Text Input</label>
+                      <Textarea
+                        value={inputText}
+                        onChange={(e) => setInputText(e.target.value)}
+                        placeholder="Paste your redacted text here (containing tokens like [PERSON_A1B2C3:FULL])..."
+                        className="min-h-[200px] font-mono text-sm"
+                      />
+                    </div>
+
+                    <Button 
+                      onClick={() => {
+                        if (Object.keys(redactionMap).length === 0) {
+                          toast({
+                            title: 'No Mapping',
+                            description: 'Please import a mapping file first',
+                            variant: 'destructive',
+                          });
+                          return;
+                        }
+                        if (!inputText.trim()) {
+                          toast({
+                            title: 'No Text',
+                            description: 'Please paste redacted text',
+                            variant: 'destructive',
+                          });
+                          return;
+                        }
+
+                        let result = inputText;
+                        Object.entries(redactionMap).forEach(([key, entry]) => {
+                          const fullPattern = `[${key}:FULL]`;
+                          result = result.split(fullPattern).join(entry.full);
+                          
+                          if ('first' in entry) {
+                            const firstPattern = `[${key}:FIRST]`;
+                            result = result.split(firstPattern).join(entry.first);
+                          }
+                          
+                          if ('last' in entry) {
+                            const lastPattern = `[${key}:LAST]`;
+                            result = result.split(lastPattern).join(entry.last);
+                          }
+                        });
+                        setRedactedText(result);
+                        toast({
+                          title: 'Unredaction Complete',
+                          description: `Restored ${Object.keys(redactionMap).length} items`,
+                          duration: 3000,
+                        });
+                      }}
+                      disabled={Object.keys(redactionMap).length === 0 || !inputText.trim()}
+                      className="w-full"
+                    >
+                      Unredact Text
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {redactedText && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Unredacted Output</CardTitle>
+                      <CardDescription>
+                        Your restored original text
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <Textarea
+                        value={redactedText}
+                        onChange={(e) => setRedactedText(e.target.value)}
+                        className="min-h-[200px] font-mono text-sm"
+                      />
+                      <Button onClick={handleCopy} variant="outline" className="w-full">
+                        <Download className="h-4 w-4 mr-2" />
+                        Copy Unredacted Text
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
+              {/* HOW IT WORKS TAB */}
+              <TabsContent value="info" className="space-y-6 mt-6">
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <Info className="h-5 w-5 text-primary" />
+                      <CardTitle>How It Works</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Understanding the AI Powered PII Redactr and its compliance features
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="space-y-4">
+                      <div>
+                        <h3 className="font-semibold text-lg mb-2">Local AI Processing</h3>
+                        <p className="text-sm text-muted-foreground">
+                          This tool uses advanced AI models that run entirely in your web browser using WebGPU/CPU acceleration. 
+                          No data is ever transmitted to external servers, ensuring complete privacy and data sovereignty.
+                        </p>
+                      </div>
+
+                      <div>
+                        <h3 className="font-semibold text-lg mb-2">Redaction Process</h3>
+                        <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+                          <li><strong>Detection:</strong> AI model scans your text to identify PII including names, emails, phone numbers, ABN, TFN, Medicare numbers, addresses, and more</li>
+                          <li><strong>Selection:</strong> Review detected items and choose which ones to redact</li>
+                          <li><strong>Redaction:</strong> Selected PII is replaced with semantic tokens (e.g., [PERSON_A1B2C3:FULL])</li>
+                          <li><strong>Mapping:</strong> A secure mapping file is generated that allows you to reverse the process later</li>
+                          <li><strong>Export:</strong> Download your redacted text and mapping file for secure storage</li>
+                        </ol>
+                      </div>
+
+                      <div>
+                        <h3 className="font-semibold text-lg mb-2">Unredaction Process</h3>
+                        <p className="text-sm text-muted-foreground mb-2">
+                          To restore redacted text to its original form:
+                        </p>
+                        <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+                          <li>Import your previously saved mapping file (JSON or encrypted)</li>
+                          <li>Paste the redacted text</li>
+                          <li>Click "Unredact Text" to restore all original values</li>
+                        </ol>
+                      </div>
+
+                      <div>
+                        <h3 className="font-semibold text-lg mb-2">Security Features</h3>
+                        <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside">
+                          <li><strong>Reversible Mode:</strong> Generates a mapping file that allows you to restore original text</li>
+                          <li><strong>Irreversible Mode:</strong> Permanently redacts PII with no mapping, ensuring data cannot be recovered</li>
+                          <li><strong>Encrypted Export:</strong> Protect your mapping files with password encryption</li>
+                          <li><strong>Deterministic Placeholders:</strong> Same values get same tokens for consistency</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Regulatory Compliance</CardTitle>
+                    <CardDescription>
+                      How this tool meets Australian financial and privacy regulations
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[35%]">Requirement</TableHead>
+                          <TableHead>How We Comply</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {complianceData.map((item, index) => (
+                          <TableRow key={index}>
+                            <TableCell className="font-medium align-top">
+                              {item.requirement}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {item.function}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
           )}
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Input Text</label>
-              <div className="flex gap-2">
-                <label htmlFor="file-upload">
-                  <Button variant="outline" size="sm" asChild>
-                    <span className="cursor-pointer flex items-center gap-2">
-                      <Upload className="h-4 w-4" />
-                      Upload File
-                    </span>
-                  </Button>
-                  <input
-                    id="file-upload"
-                    type="file"
-                    accept=".txt"
-                    className="hidden"
-                    onChange={handleFileUpload}
-                  />
-                </label>
-                <label htmlFor="mapping-upload-top">
-                  <Button variant="outline" size="sm" asChild>
-                    <span className="cursor-pointer flex items-center gap-2">
-                      <Upload className="h-4 w-4" />
-                      Import Mapping
-                    </span>
-                  </Button>
-                  <input
-                    id="mapping-upload-top"
-                    type="file"
-                    accept=".json"
-                    className="hidden"
-                    onChange={handleImportMapping}
-                  />
-                </label>
-              </div>
-            </div>
-            <Textarea
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder="Paste or type text containing potential PII..."
-              className="min-h-[200px] font-mono text-sm"
-            />
-          </div>
-
-          <div className="flex gap-2">
-            <Button 
-              onClick={handleDetect} 
-              disabled={!inputText.trim() || isDetecting || initProgress === 0}
-              className="flex-1 bg-[#003878] hover:bg-[#003878]/90 text-white"
-            >
-              {isDetecting ? 'Detecting PII...' : 'Detect PII'}
-            </Button>
-            {Object.keys(redactionMap).length > 0 && inputText.trim() && (
-              <Button 
-                onClick={() => {
-                  let result = inputText;
-                  Object.entries(redactionMap).forEach(([key, entry]) => {
-                    const fullPattern = `[${key}:FULL]`;
-                    result = result.split(fullPattern).join(entry.full);
-                    
-                    if ('first' in entry) {
-                      const firstPattern = `[${key}:FIRST]`;
-                      result = result.split(firstPattern).join(entry.first);
-                    }
-                    
-                    if ('last' in entry) {
-                      const lastPattern = `[${key}:LAST]`;
-                      result = result.split(lastPattern).join(entry.last);
-                    }
-                  });
-                  setRedactedText(result);
-                  toast({
-                    title: 'Unredaction Complete',
-                    description: `Restored ${Object.keys(redactionMap).length} items - check output below`,
-                    duration: 3000,
-                  });
-                }}
-                variant="secondary"
-                className="flex-1"
-              >
-                Unredact
-              </Button>
-            )}
-          </div>
         </CardContent>
       </Card>
-
-      {detectedEntities.length > 0 && (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Detected PII ({detectedEntities.length} items)</CardTitle>
-              <CardDescription>
-                Review and select items to redact. AI-detected items are marked with confidence scores.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                {detectedEntities.map((entity, index) => (
-                  <div
-                    key={index}
-                    onClick={() => toggleEntity(index)}
-                    className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-colors ${
-                      selectedEntities.has(index) 
-                        ? 'bg-primary/10 border-primary' 
-                        : 'hover:bg-muted/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedEntities.has(index)}
-                        onChange={() => toggleEntity(index)}
-                        className="h-4 w-4"
-                      />
-                      <Badge className={getLabelColor(entity.label)}>
-                        {entity.label}
-                      </Badge>
-                      <code className="text-sm bg-muted px-2 py-1 rounded">
-                        {entity.text}
-                      </code>
-                    </div>
-                    {entity.score !== undefined && entity.score < 1 && (
-                      <span className="text-xs text-muted-foreground">
-                        {Math.round(entity.score * 100)}% confidence
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 flex gap-2">
-                <Button onClick={handleRedact} className="flex-1">
-                  Redact Selected ({selectedEntities.size})
-                </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => setSelectedEntities(new Set(detectedEntities.map((_, i) => i)))}
-                >
-                  Select All
-                </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => setSelectedEntities(new Set())}
-                >
-                  Clear All
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {redactedText && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Output</CardTitle>
-                <CardDescription>
-                  Review the results below
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <AccuracyDisclaimer />
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium">Redacted Output</label>
-                    {selectedText && (
-                      <Badge variant="outline" className="text-xs">
-                        {selectedText.length} characters selected
-                      </Badge>
-                    )}
-                  </div>
-                  <Textarea
-                    ref={redactedTextareaRef}
-                    value={redactedText}
-                    onChange={(e) => setRedactedText(e.target.value)}
-                    onSelect={handleTextSelection}
-                    className="min-h-[200px] font-mono text-sm"
-                  />
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  <Button 
-                    onClick={handleManualRedact} 
-                    variant="secondary"
-                    disabled={!selectedText || irreversible}
-                    title={irreversible ? "Manual redaction not available in irreversible mode" : ""}
-                  >
-                    Manual Redact
-                  </Button>
-                  <Button onClick={handleCopy} className="flex-1" variant="outline">
-                    <Download className="h-4 w-4 mr-2" />
-                    Copy Text
-                  </Button>
-                  {Object.keys(redactionMap).length > 0 && (
-                    <>
-                      <Button onClick={handleExportMapping} className="flex-1" variant="outline">
-                        <Download className="h-4 w-4 mr-2" />
-                        Export Mapping
-                      </Button>
-                      <Button onClick={handleExportEncryptedMapping} className="flex-1" variant="outline">
-                        <Download className="h-4 w-4 mr-2" />
-                        Export Encrypted
-                      </Button>
-                      <Button onClick={handleUnredact} className="flex-1" variant="outline">
-                        Unredact
-                      </Button>
-                    </>
-                  )}
-                  <label htmlFor="mapping-upload" className="flex-1">
-                    <Button variant="outline" className="w-full" asChild>
-                      <span className="cursor-pointer flex items-center justify-center gap-2">
-                        <Upload className="h-4 w-4" />
-                        Import Mapping
-                      </span>
-                    </Button>
-                    <input
-                      id="mapping-upload"
-                      type="file"
-                      accept=".json"
-                      className="hidden"
-                      onChange={handleImportMapping}
-                    />
-                  </label>
-                  <Button 
-                    onClick={handleImportEncryptedMapping} 
-                    className="flex-1" 
-                    variant="outline"
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    Import Encrypted
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </>
-      )}
     </div>
   );
 }
