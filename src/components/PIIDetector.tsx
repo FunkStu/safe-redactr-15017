@@ -1073,7 +1073,7 @@ export function PIIDetector() {
                       <Textarea
                         value={inputText}
                         onChange={(e) => setInputText(e.target.value)}
-                        placeholder="Paste your redacted text here (containing tokens like [PERSON_A1B2C3:FULL])..."
+                        placeholder="Paste your redacted text here (containing tokens like [PERSON_A1B2C3] or [PERSON_A1B2C3:FULL])..."
                         className="min-h-[200px] font-mono text-sm"
                       />
                     </div>
@@ -1099,8 +1099,12 @@ export function PIIDetector() {
 
                         let result = inputText;
                         Object.entries(redactionMap).forEach(([key, entry]) => {
+                          // Handle both formats: [KEY:FULL] and [KEY] (without suffix)
                           const fullPattern = `[${key}:FULL]`;
+                          const simplePlaceholder = `[${key}]`;
+                          
                           result = result.split(fullPattern).join(entry.full);
+                          result = result.split(simplePlaceholder).join(entry.full);
                           
                           if ('first' in entry) {
                             const firstPattern = `[${key}:FIRST]`;
